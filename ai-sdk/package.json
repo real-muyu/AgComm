@@ -1,0 +1,57 @@
+{
+  "name": "@agcomm/ai-sdk",
+  "version": "0.8.0",
+  "description": "TypeScript-first SDK for building Runtime-executable AgComm .ai packages",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/packages/ai-sdk/src/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/packages/ai-sdk/src/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
+    "./code": {
+      "types": "./dist/packages/ai-sdk/src/code.d.ts",
+      "import": "./dist/code.js"
+    },
+    "./hook": {
+      "types": "./dist/packages/ai-sdk/src/hook.d.ts",
+      "import": "./dist/hook.js"
+    },
+    "./flow-hook": {
+      "types": "./dist/packages/ai-sdk/src/flow-hook.d.ts",
+      "import": "./dist/flow-hook.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "DEVELOPER.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false",
+    "test": "npm --prefix ../ai-runtime run build && npm --prefix ../gateway run build && npm run build && tsc -p tsconfig.types.json && node --experimental-strip-types --test --test-concurrency=1 tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@types/node": "22.19.19",
+    "esbuild": "0.28.0"
+  },
+  "peerDependencies": {
+    "@agcomm/ai-runtime": "^0.8.0",
+    "@agcomm/gateway": "^0.8.0"
+  },
+  "devDependencies": {
+    "@agcomm/ai-runtime": "file:../ai-runtime",
+    "@agcomm/gateway": "file:../gateway",
+    "typescript": "5.9.3"
+  },
+  "license": "MIT"
+}

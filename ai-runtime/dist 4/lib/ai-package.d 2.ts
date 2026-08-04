@@ -1,0 +1,22 @@
+import type { Connection, FlowNode, FlowProject, Plugin, Skill, Variable, WorkspaceConfig } from "../domain/flow/types.ts";
+import { CURRENT_AI_FORMAT_VERSION } from "../domain/package/schema.ts";
+export { createZip, readZip } from "../domain/package/zip.ts";
+export { AiPackageValidationError, CURRENT_AI_FORMAT_VERSION } from "../domain/package/schema.ts";
+export type EditorFlowNode = FlowNode;
+export type EditorConnection = Connection;
+export type EditorVariable = Variable;
+export type EditorSkill = Skill;
+export type EditorPlugin = Plugin;
+export type AiProject = FlowProject;
+export type { WorkspaceConfig };
+export type AiImportResult = {
+    project: AiProject;
+    sourceVersion: 0 | 1 | 2;
+    targetVersion: typeof CURRENT_AI_FORMAT_VERSION;
+    migrated: boolean;
+    migrations: string[];
+};
+export declare function buildAiPackageFiles(project: AiProject, timestamp?: string): Record<string, string>;
+export declare function createAiPackage(project: AiProject, timestamp?: string): Blob;
+export declare function importAiPackage(buffer: ArrayBuffer, fallbackName?: string): Promise<AiImportResult>;
+export declare function parseAiPackage(buffer: ArrayBuffer, fallbackName?: string): Promise<AiProject>;

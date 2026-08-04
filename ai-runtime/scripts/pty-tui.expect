@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+set timeout 15
+set env(TERM) "xterm-256color"
+spawn /bin/sh -c {exec "$@" 2>&1} sh $env(AI_RUNTIME_PTY_NODE) $env(AI_RUNTIME_PTY_CLI) $env(AI_RUNTIME_PTY_FIXTURE) --json
+expect {
+  -re "等待输入" { send -- "\n" }
+  timeout { puts stderr "TUI did not render an INPUT form"; exit 1 }
+  eof { puts stderr "TUI exited before rendering an INPUT form"; exit 1 }
+}
+expect {
+  -re "已完成" { send -- "q" }
+  timeout { puts stderr "TUI did not complete after INPUT submission"; exit 1 }
+  eof { puts stderr "TUI exited before completing the flow"; exit 1 }
+}
+expect eof
+set status [wait]
+exit [lindex $status 3]

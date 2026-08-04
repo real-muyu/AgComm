@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@agcomm/ai-runtime/gateway-host": ["../ai-runtime/dist/gateway-host.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

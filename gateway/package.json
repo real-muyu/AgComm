@@ -1,0 +1,38 @@
+{
+  "name": "@agcomm/gateway",
+  "version": "0.8.0",
+  "description": "Local background control plane for AgComm applications",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false",
+    "test": "npm --prefix ../ai-runtime run build && npm run typecheck && npm run build && node --test --test-concurrency=1 tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@agcomm/ai-runtime": "^0.8.0"
+  },
+  "dependencies": {
+    "@napi-rs/keyring": "^1.3.0"
+  },
+  "devDependencies": {
+    "@agcomm/ai-runtime": "file:../ai-runtime",
+    "esbuild": "0.28.0",
+    "typescript": "5.9.3"
+  },
+  "license": "Elastic-2.0"
+}
