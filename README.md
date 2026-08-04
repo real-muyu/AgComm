@@ -76,9 +76,9 @@ examples/
 
 ## Documentation
 
-- [SDK README](./packages/ai-sdk/README.md)
-- [SDK Developer Guide](./packages/ai-sdk/DEVELOPER.md)
-- [Runtime README](./packages/ai-runtime/README.md)
-- [Runtime Usage Guide](./packages/ai-runtime/USAGE.md)
-- [Gateway README](./packages/gateway/README.md)
-- [Complete Example](./examples/ai-sdk-report/README.md)
+- [SDK README](./ai-sdk/README.md)
+- [SDK Developer Guide](./ai-sdk/DEVELOPER.md)
+- [Runtime README](./ai-runtime/README.md)
+- [Runtime Usage Guide](./ai-runtime/USAGE.md)
+- [Gateway README](./gateway/README.md)
+- [Complete Example](./ai-sdk-report/README.md)
