@@ -2,7 +2,7 @@
 import {
   cliAbortController,
   cliInterrupted
-} from "./chunk-AO2GJV6E.js";
+} from "./chunk-KWZ3DGEW-bundle.js";
 import {
   AiRuntimeError,
   LocalRuntimeConfigStore,
@@ -19,8 +19,8 @@ import {
   runTerminalLauncher,
   runTerminalSettings,
   selectTerminalPermissionPath
-} from "./chunk-KGYHIDQS.js";
-import "./chunk-NZLE2WMY.js";
+} from "./chunk-WIOXNCD7-bundle.js";
+import "./chunk-MZWYF3I5-bundle.js";
 
 // src/cli.ts
 var RUNTIME_VERSION = "0.8.0";

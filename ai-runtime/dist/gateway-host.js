@@ -4,8 +4,8 @@ import {
   createRuntime,
   createSafeOutboundFetch,
   validateResolvedPublicUrl
-} from "./chunks/chunk-KGYHIDQS.js";
-import "./chunks/chunk-NZLE2WMY.js";
+} from "./chunks/chunk-WIOXNCD7-bundle.js";
+import "./chunks/chunk-MZWYF3I5-bundle.js";
 
 // src/gateway-host.ts
 async function inspectGatewayPackage(pathOrBytes, runtimeOptions = {}) {

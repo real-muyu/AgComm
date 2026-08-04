@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import "./chunks/chunk-AO2GJV6E.js";
-import "./chunks/chunk-NZLE2WMY.js";
+import "./chunks/chunk-KWZ3DGEW-bundle.js";
+import "./chunks/chunk-MZWYF3I5-bundle.js";
 
 // src/cli-entry.ts
-await import("./chunks/cli-KWI7UKIM.js");
+await import("./chunks/cli-EAGTVVWT-bundle.js");

@@ -23,9 +23,9 @@ import {
 } from "../dist/index.js";
 import { definePlugin, defineTool } from "../dist/plugin.js";
 import { createZip, parseAiPackage, readZip } from "../../../lib/ai-package.ts";
-import { parseAiPackageV6 } from "../../../lib/ai-package-v6.ts";
-import { parseAiPackageV7 } from "../../../lib/ai-package-v7.ts";
-import { parseAiPackageV8 } from "../../../lib/ai-package-v8.ts";
+import { parseAiPackageV6 } from "../../../lib/ai-package-v6-format.ts";
+import { parseAiPackageV7 } from "../../../lib/ai-package-v7-format.ts";
+import { parseAiPackageBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
 
 function arrayBufferOf(bytes) {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -150,7 +150,7 @@ test("Flow Hooks rewrite standalone HTTP nodes and recover after retries are exh
   assert.equal(compiled.formatVersion, 8);
   assert.deepEqual(compiled.project.flowHookIds, ["http_policy"]);
   assert.equal(compiled.project.plugins.find((bundle) => bundle.id === "http_policy").kind, "flow-hook");
-  const restored = await parseAiPackageV8(arrayBufferOf(await buildAi(app)), "flow-hook");
+  const restored = await parseAiPackageBeta1(arrayBufferOf(await buildAi(app)), "flow-hook");
   assert.deepEqual(restored.flowHookIds, ["http_policy"]);
   assert.throws(() => defineApp({ name: "Duplicate Flow Hook", hooks: [hook, hook] }, ({ flow }) => flow.output({ id: "result" })), (error) => error.code === "DUPLICATE_FLOW_HOOK");
 
@@ -159,7 +159,7 @@ test("Flow Hooks rewrite standalone HTTP nodes and recover after retries are exh
   invalidFlow.config.hookIds = ["missing_hook"];
   invalidFiles["flow/flow.json"] = JSON.stringify(invalidFlow);
   const invalidArchive = await createZip(invalidFiles).arrayBuffer();
-  await assert.rejects(() => parseAiPackageV8(invalidArchive, "invalid-flow-hook"), (error) => error.code === "REFERENCE_INVALID");
+  await assert.rejects(() => parseAiPackageBeta1(invalidArchive, "invalid-flow-hook"), (error) => error.code === "REFERENCE_INVALID");
 
   const originalFetch = globalThis.fetch;
   const urls = [];
@@ -181,7 +181,7 @@ test("Flow Hooks rewrite standalone HTTP nodes and recover after retries are exh
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test("collects Workspace Hooks once and round-trips v8 hook references", async () => {
+test("collects Workspace Hooks once and round-trips Beta 1 hook references", async () => {
   const hook = await hookFixture();
   const agent = defineSkill({ id: "hook_agent", name: "Hook Agent", prompt: "Coordinate" });
   const child = defineSkill({ id: "hook_child", name: "Hook Child", prompt: "Execute {{skill_input}}" });
@@ -195,7 +195,7 @@ test("collects Workspace Hooks once and round-trips v8 hook references", async (
   assert.equal(compiled.project.plugins.filter((bundle) => bundle.kind === "workspace-hook").length, 1);
   assert.deepEqual(compiled.project.nodes.filter((node) => node.type === "WORKSPACE").map((node) => node.config.hookIds), [["workspace_policy"], ["workspace_policy"]]);
   const bytes = await buildAi(app);
-  const restored = await parseAiPackageV8(arrayBufferOf(bytes), "hooks");
+  const restored = await parseAiPackageBeta1(arrayBufferOf(bytes), "hooks");
   assert.equal(restored.plugins.find((bundle) => bundle.id === "workspace_policy").kind, "workspace-hook");
   await assert.rejects(() => parseAiPackageV7(arrayBufferOf(bytes), "v7-importer"), /不支持.*8|formatVersion/);
   await assert.rejects(() => parseAiPackageV6(arrayBufferOf(bytes), "v6-importer"), /不支持.*8|formatVersion/);
@@ -212,7 +212,7 @@ test("collects Workspace Hooks once and round-trips v8 hook references", async (
   await assert.rejects(() => compileApp(collision), (error) => error.code === "NODE_BUNDLE_ID_CONFLICT");
 });
 
-test("builds a v8 Runtime DAG with inferred fan-out, explicit joins, layout, and a portable plugin", async () => {
+test("builds a Beta 1 Runtime DAG with inferred fan-out, explicit joins, layout, and a portable plugin", async () => {
   const plugin = await pluginFixture();
   const userInput = variable.string("user_input");
   const approved = variable.boolean("approved", true);
@@ -261,7 +261,7 @@ test("builds a v8 Runtime DAG with inferred fan-out, explicit joins, layout, and
   assert.doesNotMatch(compiled.project.plugins[0].bundleCode, /@agcomm\/ai-sdk/);
 
   const bytes = await buildAi(app);
-  const restored = await parseAiPackageV8(arrayBufferOf(bytes), "fallback");
+  const restored = await parseAiPackageBeta1(arrayBufferOf(bytes), "fallback");
   assert.equal(restored.formatVersion, 8);
   assert.equal(restored.name, "SDK DAG");
   assert.deepEqual(restored.visualizations, ["bar", "line"]);
@@ -313,7 +313,7 @@ test("round-trips interaction capabilities and builds typed condition branches",
   });
   assert.deepEqual(compiled.project.edges.filter((edge) => edge.from === "decision").map((edge) => [edge.to, edge.condition]).sort(), [["high", "true"], ["low", "false"]]);
   assert.deepEqual(compiled.project.variables.filter((item) => ["session_id", "conversation_history", "knowledge_context"].includes(item.name)).map((item) => item.name).sort(), ["conversation_history", "knowledge_context", "session_id"]);
-  const restored = await parseAiPackageV8(arrayBufferOf(await buildAi(app)), "interaction");
+  const restored = await parseAiPackageBeta1(arrayBufferOf(await buildAi(app)), "interaction");
   assert.deepEqual(restored.interaction, compiled.project.interaction);
 });
 
@@ -329,7 +329,7 @@ test("rejects invalid interaction combinations and duplicate condition consumers
   }), (error) => error instanceof AiSdkError && error.code === "DUPLICATE_BRANCH_CONSUMER");
 });
 
-test("round-trips background triggers and CONTACT nodes in v8", async () => {
+test("round-trips background triggers and CONTACT nodes in Beta 1", async () => {
   const app = defineApp({
     id: "daily_assistant",
     version: "1.0.0",
@@ -350,7 +350,7 @@ test("round-trips background triggers and CONTACT nodes in v8", async () => {
   assert.equal(compiled.project.nodes.find((node) => node.id === "notify").type, "CONTACT");
   assert.ok(compiled.project.edges.some((edge) => edge.from === "load_status" && edge.to === "notify"));
   assert.deepEqual(compiled.project.variables.filter((item) => ["background_trigger", "gateway_run_id"].includes(item.name)).map((item) => item.name).sort(), ["background_trigger", "gateway_run_id"]);
-  const restored = await parseAiPackageV8(arrayBufferOf(await buildAi(app)), "background");
+  const restored = await parseAiPackageBeta1(arrayBufferOf(await buildAi(app)), "background");
   assert.equal(restored.background.heartbeat.everyMs, 60_000);
   assert.equal(restored.background.cron[0].timezone, "Asia/Shanghai");
   assert.equal(restored.nodes.find((node) => node.id === "notify").config.webhook, true);
@@ -360,13 +360,13 @@ test("round-trips background triggers and CONTACT nodes in v8", async () => {
   flow.config.background = { historyWindow: 20 };
   files["flow/flow.json"] = JSON.stringify(flow);
   const invalidArchive = await createZip(files).arrayBuffer();
-  await assert.rejects(() => parseAiPackageV8(invalidArchive, "invalid-background"), (error) => error.code === "REFERENCE_INVALID");
+  await assert.rejects(() => parseAiPackageBeta1(invalidArchive, "invalid-background"), (error) => error.code === "REFERENCE_INVALID");
 
   let installed;
   const result = await installBackgroundApp(app, {
     gateway: {
       async install(path, options) {
-        const project = await parseAiPackageV8(arrayBufferOf(await readFile(path)), "gateway-install");
+        const project = await parseAiPackageBeta1(arrayBufferOf(await readFile(path)), "gateway-install");
         installed = { project, options };
         return { id: project.appId, version: project.appVersion };
       },
@@ -415,7 +415,7 @@ test("writeAi creates directories and writes a round-trip-valid file", async () 
   const bytes = await readFile(target);
   assert.equal(result.path, target);
   assert.equal(result.byteLength, bytes.byteLength);
-  assert.equal((await parseAiPackageV8(arrayBufferOf(bytes), "fallback")).name, "Write");
+  assert.equal((await parseAiPackageBeta1(arrayBufferOf(bytes), "fallback")).name, "Write");
   await assert.rejects(() => parseAiPackage(arrayBufferOf(bytes), "fallback"), (error) => error?.code === "UNSUPPORTED_FORMAT_VERSION");
 });
 

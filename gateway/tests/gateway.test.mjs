@@ -6,10 +6,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { connectRuntimeGateway, createRuntimeGateway } from "../dist/index.js";
 import { createRuntime } from "../../ai-runtime/dist/index.js";
-import { createAiPackageV5 } from "../../../lib/ai-package-v5.ts";
-import { createAiPackageV6 } from "../../../lib/ai-package-v6.ts";
-import { createAiPackageV7 } from "../../../lib/ai-package-v7.ts";
-import { createAiPackageV8 } from "../../../lib/ai-package-v8.ts";
+import { createAiPackageV5 } from "../../../lib/ai-package-v5-format.ts";
+import { createAiPackageV6 } from "../../../lib/ai-package-v6-format.ts";
+import { createAiPackageV7 } from "../../../lib/ai-package-v7-format.ts";
+import { createAiPackageBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
 
 function backgroundProject({ webhook = false, body = "Review task", streamMode } = {}) {
   return {
@@ -51,8 +51,8 @@ async function packageBytesV7(options) {
   return new Uint8Array(await createAiPackageV7(backgroundProject(options), "2026-07-30T00:00:00.000Z").arrayBuffer());
 }
 
-async function packageBytesV8(options) {
-  return new Uint8Array(await createAiPackageV8(backgroundProject(options), "2026-08-03T00:00:00.000Z").arrayBuffer());
+async function packageBytesBeta1(options) {
+  return new Uint8Array(await createAiPackageBeta1(backgroundProject(options), "2026-08-03T00:00:00.000Z").arrayBuffer());
 }
 
 async function slowPackageBytesV7() {
@@ -127,11 +127,11 @@ test("Gateway installs and executes a v6 background app", async () => {
   await gateway.dispose();
 });
 
-test("Gateway installs and executes a v8 background app", async () => {
-  const root = await mkdtemp(join(tmpdir(), "ai-runtime-gateway-v8-"));
+test("Gateway installs and executes a Beta 1 background app", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ai-runtime-gateway-beta-one-"));
   const gateway = createRuntimeGateway({ root, credentialStore: memoryCredentials() });
   await gateway.initialize();
-  const installed = await gateway.install(await packageBytesV8(), { enabled: true });
+  const installed = await gateway.install(await packageBytesBeta1(), { enabled: true });
   await gateway.runNow(installed.id, "monitor");
   assert.equal((await gateway.listRuns(installed.id))[0].status, "completed");
   assert.equal((await gateway.listInbox(installed.id))[0].title, "Action required");

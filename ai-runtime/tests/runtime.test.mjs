@@ -6,10 +6,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { createRuntime } from "../dist/index.js";
 import { buildAiPackageFiles, createAiPackage, createZip, readZip } from "../../../lib/ai-package.ts";
-import { createAiPackageV3 } from "../../../lib/ai-package-v3.ts";
-import { createAiPackageV4 } from "../../../lib/ai-package-v4.ts";
-import { createAiPackageV6 } from "../../../lib/ai-package-v6.ts";
-import { createAiPackageV7 } from "../../../lib/ai-package-v7.ts";
+import { createAiPackageV3 } from "../../../lib/ai-package-v3-format.ts";
+import { createAiPackageV4 } from "../../../lib/ai-package-v4-format.ts";
+import { createAiPackageV6 } from "../../../lib/ai-package-v6-format.ts";
+import { createAiPackageV7 } from "../../../lib/ai-package-v7-format.ts";
 import { createPluginScaffold, finalizePlugin } from "../../../runtime/plugins/package.ts";
 import { pluginSignaturePayload } from "../../../lib/plugin-runtime/signature.ts";
 

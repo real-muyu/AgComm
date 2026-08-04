@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import type { FlowProject } from "../../../domain/flow/types.ts";
 import { validateEditorFlow } from "../../../domain/flow/validator.ts";
-import { createAiPackageV8, parseAiPackageV8, type AiProjectV8, type RuntimeBundleV8 } from "../../../lib/ai-package-v8.ts";
+import { createAiPackageBeta1, parseAiPackageBeta1, type AiProjectBeta1, type RuntimeBundleBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
 import { finalizePlugin } from "../../../runtime/plugins/package.ts";
 import type { CodeDefinition } from "./code.ts";
 import type { WorkspaceHookDefinition } from "./hook.ts";
@@ -24,7 +24,7 @@ const RUNTIME_BUNDLE_ENTRY = "dist/index.js";
 
 export type CompiledApp = {
   readonly formatVersion: 8;
-  readonly project: AiProjectV8;
+  readonly project: AiProjectBeta1;
 };
 
 export type BuildResult = {
@@ -103,7 +103,7 @@ async function bundleEntry(
   return output.text;
 }
 
-async function compilePlugin(definition: PortablePluginDefinition): Promise<RuntimeBundleV8> {
+async function compilePlugin(definition: PortablePluginDefinition): Promise<RuntimeBundleBeta1> {
   const entry = entryPath(definition, "Plugin");
   let sourceCode: string;
   try { sourceCode = await readFile(entry, "utf8"); }
@@ -156,7 +156,7 @@ async function compilePlugin(definition: PortablePluginDefinition): Promise<Runt
   }), kind: "plugin" };
 }
 
-async function compileCode(definition: CodeDefinition): Promise<RuntimeBundleV8> {
+async function compileCode(definition: CodeDefinition): Promise<RuntimeBundleBeta1> {
   return compileRuntimeBundle(definition, {
     kind: "code",
     subject: "Code",
@@ -176,7 +176,7 @@ async function compileCode(definition: CodeDefinition): Promise<RuntimeBundleV8>
   });
 }
 
-async function compileHook(definition: WorkspaceHookDefinition): Promise<RuntimeBundleV8> {
+async function compileHook(definition: WorkspaceHookDefinition): Promise<RuntimeBundleBeta1> {
   return compileRuntimeBundle(definition, {
     kind: "workspace-hook",
     subject: "Workspace Hook",
@@ -190,7 +190,7 @@ async function compileHook(definition: WorkspaceHookDefinition): Promise<Runtime
   });
 }
 
-async function compileFlowHook(definition: FlowHookDefinition): Promise<RuntimeBundleV8> {
+async function compileFlowHook(definition: FlowHookDefinition): Promise<RuntimeBundleBeta1> {
   return compileRuntimeBundle(definition, {
     kind: "flow-hook",
     subject: "Flow Hook",
@@ -206,18 +206,18 @@ async function compileFlowHook(definition: FlowHookDefinition): Promise<RuntimeB
 
 type RuntimeDefinition = Pick<CodeDefinition, "entry" | "id" | "name" | "description" | "version" | "permissions" | "limits">;
 type RuntimeCompileOptions = {
-  kind: RuntimeBundleV8["kind"];
+  kind: RuntimeBundleBeta1["kind"];
   subject: "Code" | "Workspace Hook" | "Flow Hook";
   entrySubject: "Code" | "Hook";
   runtimePath: string;
   importPattern: RegExp;
   pluginName: string;
   missingDefaultMessage: string;
-  tools: RuntimeBundleV8["tools"];
+  tools: RuntimeBundleBeta1["tools"];
   readme: string;
 };
 
-function hookTools(definition: WorkspaceHookDefinition | FlowHookDefinition, subject: string): RuntimeBundleV8["tools"] {
+function hookTools(definition: WorkspaceHookDefinition | FlowHookDefinition, subject: string): RuntimeBundleBeta1["tools"] {
   return Object.entries(definition.tools).map(([name, tool]) => ({
     name,
     description: tool.description ?? `${subject} ${name}`,
@@ -227,7 +227,7 @@ function hookTools(definition: WorkspaceHookDefinition | FlowHookDefinition, sub
   }));
 }
 
-async function compileRuntimeBundle(definition: RuntimeDefinition, options: RuntimeCompileOptions): Promise<RuntimeBundleV8> {
+async function compileRuntimeBundle(definition: RuntimeDefinition, options: RuntimeCompileOptions): Promise<RuntimeBundleBeta1> {
   const entry = entryPath(definition, options.entrySubject);
   let sourceCode: string;
   try { sourceCode = await readFile(entry, "utf8"); }
@@ -279,7 +279,7 @@ export async function compileApp(app: AppDefinition): Promise<CompiledApp> {
       Promise.all(prepared.hooks.map(compileHook)),
       Promise.all(prepared.flowHooks.map(compileFlowHook)),
     ]);
-    const project: AiProjectV8 = { ...structuredClone(prepared.project), formatVersion: 8, plugins: [...plugins, ...codes, ...hooks, ...flowHooks] };
+    const project: AiProjectBeta1 = { ...structuredClone(prepared.project), formatVersion: 8, plugins: [...plugins, ...codes, ...hooks, ...flowHooks] };
     const validation = validateEditorFlow(project as unknown as FlowProject);
     if (!validation.valid) {
       const issues: AiSdkIssue[] = validation.issues.filter((issue) => issue.severity === "error").map((issue) => ({
@@ -299,9 +299,9 @@ async function packageApp(app: AppDefinition) {
   const compiled = await compileApp(app);
   try {
     const { formatVersion: _formatVersion, ...project } = compiled.project;
-    const archive = createAiPackageV8(project);
+    const archive = createAiPackageBeta1(project);
     const buffer = await archive.arrayBuffer();
-    await parseAiPackageV8(buffer, compiled.project.name);
+    await parseAiPackageBeta1(buffer, compiled.project.name);
     return { compiled, bytes: new Uint8Array(buffer) };
   } catch (error) {
     wrap(error, "PACKAGE_BUILD_FAILED", ".ai 构建或 round-trip 校验失败");

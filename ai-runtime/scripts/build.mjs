@@ -24,7 +24,7 @@ try {
     format: "esm",
     target: "node22",
     splitting: true,
-    chunkNames: "chunks/[name]-[hash]",
+    chunkNames: "chunks/[name]-[hash]-bundle",
     sourcemap: false,
     packages: "bundle",
     define: { __AI_RUNTIME_VERSION__: JSON.stringify(packageVersion) },

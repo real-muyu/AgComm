@@ -1,8 +1,8 @@
-import { type AiProjectV8 } from "../../../lib/ai-package-v8.ts";
+import { type AiProjectBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
 import { type AppDefinition } from "./model.ts";
 export type CompiledApp = {
     readonly formatVersion: 8;
-    readonly project: AiProjectV8;
+    readonly project: AiProjectBeta1;
 };
 export type BuildResult = {
     readonly path: string;

@@ -2,12 +2,12 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { ToolMessage } from "@langchain/core/messages";
 import { parseAiPackage } from "../../../lib/ai-package.ts";
-import { parseAiPackageV3, type AiProjectV3 } from "../../../lib/ai-package-v3.ts";
-import { parseAiPackageV4, type AiProjectV4 } from "../../../lib/ai-package-v4.ts";
-import { parseAiPackageV5, type AiProjectV5 } from "../../../lib/ai-package-v5.ts";
-import { parseAiPackageV6, type AiProjectV6 } from "../../../lib/ai-package-v6.ts";
-import { parseAiPackageV7, type AiProjectV7 } from "../../../lib/ai-package-v7.ts";
-import { parseAiPackageV8, type AiProjectV8 } from "../../../lib/ai-package-v8.ts";
+import { parseAiPackageV3, type AiProjectV3 } from "../../../lib/ai-package-v3-format.ts";
+import { parseAiPackageV4, type AiProjectV4 } from "../../../lib/ai-package-v4-format.ts";
+import { parseAiPackageV5, type AiProjectV5 } from "../../../lib/ai-package-v5-format.ts";
+import { parseAiPackageV6, type AiProjectV6 } from "../../../lib/ai-package-v6-format.ts";
+import { parseAiPackageV7, type AiProjectV7 } from "../../../lib/ai-package-v7-format.ts";
+import { parseAiPackageBeta1, type AiProjectBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
 import { readZip } from "../../../domain/package/zip.ts";
 import { compileFlow, compileInputValues, compileRuntimeVariables } from "../../../domain/flow/compiler.ts";
 import { readInputForm } from "../../../domain/flow/input-form.ts";
@@ -119,7 +119,7 @@ export type {
 } from "./app-storage.ts";
 export type { OpenAiEmbeddingProviderOptions } from "./embedding-provider.ts";
 
-type RuntimeProject = FlowProject | AiProjectV3 | AiProjectV4 | AiProjectV5 | AiProjectV6 | AiProjectV7 | AiProjectV8;
+type RuntimeProject = FlowProject | AiProjectV3 | AiProjectV4 | AiProjectV5 | AiProjectV6 | AiProjectV7 | AiProjectBeta1;
 type ProjectExecutionContext = {
   packageHash: string;
   sessionId?: string;
@@ -646,7 +646,7 @@ async function parseRuntimePackage(buffer: ArrayBuffer, fallbackName: string): P
       let manifest: { formatVersion?: unknown } | null;
       try { manifest = JSON.parse(manifestText) as { formatVersion?: unknown } | null; }
       catch { return { project: await parseAiPackage(buffer, fallbackName), formatVersion: 2 }; }
-      if (manifest?.formatVersion === 8) return { project: await parseAiPackageV8(buffer, fallbackName), formatVersion: 8 };
+      if (manifest?.formatVersion === 8) return { project: await parseAiPackageBeta1(buffer, fallbackName), formatVersion: 8 };
       if (manifest?.formatVersion === 7) return { project: await parseAiPackageV7(buffer, fallbackName), formatVersion: 7 };
       if (manifest?.formatVersion === 6) return { project: await parseAiPackageV6(buffer, fallbackName), formatVersion: 6 };
       if (manifest?.formatVersion === 5) return { project: await parseAiPackageV5(buffer, fallbackName), formatVersion: 5 };

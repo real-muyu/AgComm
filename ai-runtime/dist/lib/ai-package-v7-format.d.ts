@@ -1,5 +1,5 @@
 import type { AppInteractionConfig } from "../domain/flow/types.ts";
-import { type AiProjectV6, type RuntimeBundleV6, type V6FlowNode } from "./ai-package-v6.ts";
+import { type AiProjectV6, type RuntimeBundleV6, type V6FlowNode } from "./ai-package-v6-format.ts";
 export declare const AI_FORMAT_VERSION_7: 7;
 export type RuntimeBundleV7 = RuntimeBundleV6;
 export type V7FlowNode = V6FlowNode;

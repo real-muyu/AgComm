@@ -3324,8 +3324,8 @@ function validate16(data, { instancePath = "", parentData, parentDataProperty, r
   validate16.errors = vErrors;
   return errors === 0;
 }
-var manifestV8 = validate17;
-var schema25 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://agcomm.local/schemas/ai/v8/manifest.schema.json", "title": "AgComm .ai manifest v8", "type": "object", "required": ["formatVersion", "format", "id", "name", "version"], "properties": { "formatVersion": { "const": 8 }, "format": { "const": "ai_package" }, "id": { "$ref": "#/definitions/id" }, "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "version": { "type": "string", "minLength": 1, "maxLength": 32 }, "created_at": { "type": "string", "maxLength": 64 }, "updated_at": { "type": "string", "maxLength": 64 }, "author": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 120 } }, "additionalProperties": false }, "files": { "type": "array", "maxItems": 512, "items": { "type": "string", "maxLength": 240 } }, "signature": { "type": ["object", "null"] } }, "additionalProperties": false, "definitions": { "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" } } };
+var manifestBeta1 = validate17;
+var schema25 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://agcomm.local/schemas/ai/beta-one/manifest.schema.json", "title": "AgComm .ai manifest Beta 1", "type": "object", "required": ["formatVersion", "format", "id", "name", "version"], "properties": { "formatVersion": { "const": 8 }, "format": { "const": "ai_package" }, "id": { "$ref": "#/definitions/id" }, "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "version": { "type": "string", "minLength": 1, "maxLength": 32 }, "created_at": { "type": "string", "maxLength": 64 }, "updated_at": { "type": "string", "maxLength": 64 }, "author": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 120 } }, "additionalProperties": false }, "files": { "type": "array", "maxItems": 512, "items": { "type": "string", "maxLength": 240 } }, "signature": { "type": ["object", "null"] } }, "additionalProperties": false, "definitions": { "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" } } };
 function validate17(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   ;
   let vErrors = null;
@@ -7209,8 +7209,8 @@ function validate31(data, { instancePath = "", parentData, parentDataProperty, r
   validate31.errors = vErrors;
   return errors === 0;
 }
-var flowV8 = validate41;
-var schema62 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://agcomm.local/schemas/ai/v8/flow.schema.json", "title": "AgComm .ai flow v8", "type": "object", "required": ["entry", "nodes", "edges"], "properties": { "entry": { "$ref": "#/definitions/id" }, "nodes": { "type": "array", "minItems": 1, "maxItems": 2e3, "uniqueItems": true, "items": { "$ref": "#/definitions/id" } }, "edges": { "type": "array", "maxItems": 8e3, "items": { "type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/id" }, "from": { "$ref": "#/definitions/id" }, "to": { "$ref": "#/definitions/id" }, "label": { "type": "string", "maxLength": 200 }, "condition": { "type": "string", "maxLength": 2e3 } } } }, "variables": { "type": "object", "maxProperties": 512 }, "visualizations": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "maxLength": 64 } }, "config": { "type": "object", "additionalProperties": false, "properties": { "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 6e5 }, "maxConcurrency": { "type": "integer", "minimum": 1, "maximum": 32 }, "onError": { "enum": ["stop", "continue"] }, "interaction": { "$ref": "#/definitions/interaction" }, "background": { "$ref": "#/definitions/background" }, "hookIds": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/definitions/id" } } } } }, "additionalProperties": false, "definitions": { "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, "jsonValue": {}, "variables": { "type": "object", "maxProperties": 512, "additionalProperties": { "$ref": "#/definitions/jsonValue" } }, "heartbeat": { "type": "object", "required": ["id", "everyMs", "input", "variables", "runOnStart"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/id" }, "everyMs": { "type": "integer", "minimum": 6e4, "maximum": 864e5 }, "input": { "type": "string", "maxLength": 65536 }, "variables": { "$ref": "#/definitions/variables" }, "runOnStart": { "type": "boolean" } } }, "cronTrigger": { "type": "object", "required": ["id", "expression", "timezone", "input", "variables", "misfireGraceMs"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/id" }, "expression": { "type": "string", "minLength": 9, "maxLength": 120 }, "timezone": { "type": "string", "minLength": 1, "maxLength": 80 }, "input": { "type": "string", "maxLength": 65536 }, "variables": { "$ref": "#/definitions/variables" }, "misfireGraceMs": { "type": "integer", "minimum": 0, "maximum": 864e5 } } }, "background": { "type": "object", "minProperties": 1, "additionalProperties": false, "properties": { "historyWindow": { "type": "integer", "minimum": 1, "maximum": 100 }, "heartbeat": { "$ref": "#/definitions/heartbeat" }, "cron": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/cronTrigger" } } } }, "interaction": { "type": "object", "additionalProperties": false, "properties": { "conversation": { "type": "object", "additionalProperties": false, "properties": { "multiTurn": { "type": "boolean" }, "history": { "type": "boolean" }, "historyWindow": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "knowledge": { "type": "object", "required": ["enabled"], "additionalProperties": false, "properties": { "enabled": { "const": true }, "scopes": { "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["app", "session"] } }, "topK": { "type": "integer", "minimum": 1, "maximum": 20 }, "chunkSize": { "type": "integer", "minimum": 200, "maximum": 8e3 }, "chunkOverlap": { "type": "integer", "minimum": 0, "maximum": 2e3 } } }, "streaming": { "type": "object", "required": ["defaultMode"], "additionalProperties": false, "properties": { "defaultMode": { "enum": ["text", "events"] } } } } } } };
+var flowBeta1 = validate41;
+var schema62 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://agcomm.local/schemas/ai/beta-one/flow.schema.json", "title": "AgComm .ai flow Beta 1", "type": "object", "required": ["entry", "nodes", "edges"], "properties": { "entry": { "$ref": "#/definitions/id" }, "nodes": { "type": "array", "minItems": 1, "maxItems": 2e3, "uniqueItems": true, "items": { "$ref": "#/definitions/id" } }, "edges": { "type": "array", "maxItems": 8e3, "items": { "type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/id" }, "from": { "$ref": "#/definitions/id" }, "to": { "$ref": "#/definitions/id" }, "label": { "type": "string", "maxLength": 200 }, "condition": { "type": "string", "maxLength": 2e3 } } } }, "variables": { "type": "object", "maxProperties": 512 }, "visualizations": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "maxLength": 64 } }, "config": { "type": "object", "additionalProperties": false, "properties": { "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 6e5 }, "maxConcurrency": { "type": "integer", "minimum": 1, "maximum": 32 }, "onError": { "enum": ["stop", "continue"] }, "interaction": { "$ref": "#/definitions/interaction" }, "background": { "$ref": "#/definitions/background" }, "hookIds": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/definitions/id" } } } } }, "additionalProperties": false, "definitions": { "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, "jsonValue": {}, "variables": { "type": "object", "maxProperties": 512, "additionalProperties": { "$ref": "#/definitions/jsonValue" } }, "heartbeat": { "type": "object", "required": ["id", "everyMs", "input", "variables", "runOnStart"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/id" }, "everyMs": { "type": "integer", "minimum": 6e4, "maximum": 864e5 }, "input": { "type": "string", "maxLength": 65536 }, "variables": { "$ref": "#/definitions/variables" }, "runOnStart": { "type": "boolean" } } }, "cronTrigger": { "type": "object", "required": ["id", "expression", "timezone", "input", "variables", "misfireGraceMs"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/id" }, "expression": { "type": "string", "minLength": 9, "maxLength": 120 }, "timezone": { "type": "string", "minLength": 1, "maxLength": 80 }, "input": { "type": "string", "maxLength": 65536 }, "variables": { "$ref": "#/definitions/variables" }, "misfireGraceMs": { "type": "integer", "minimum": 0, "maximum": 864e5 } } }, "background": { "type": "object", "minProperties": 1, "additionalProperties": false, "properties": { "historyWindow": { "type": "integer", "minimum": 1, "maximum": 100 }, "heartbeat": { "$ref": "#/definitions/heartbeat" }, "cron": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/cronTrigger" } } } }, "interaction": { "type": "object", "additionalProperties": false, "properties": { "conversation": { "type": "object", "additionalProperties": false, "properties": { "multiTurn": { "type": "boolean" }, "history": { "type": "boolean" }, "historyWindow": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "knowledge": { "type": "object", "required": ["enabled"], "additionalProperties": false, "properties": { "enabled": { "const": true }, "scopes": { "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["app", "session"] } }, "topK": { "type": "integer", "minimum": 1, "maximum": 20 }, "chunkSize": { "type": "integer", "minimum": 200, "maximum": 8e3 }, "chunkOverlap": { "type": "integer", "minimum": 0, "maximum": 2e3 } } }, "streaming": { "type": "object", "required": ["defaultMode"], "additionalProperties": false, "properties": { "defaultMode": { "enum": ["text", "events"] } } } } } } };
 var schema68 = { "type": "object", "additionalProperties": false, "properties": { "conversation": { "type": "object", "additionalProperties": false, "properties": { "multiTurn": { "type": "boolean" }, "history": { "type": "boolean" }, "historyWindow": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "knowledge": { "type": "object", "required": ["enabled"], "additionalProperties": false, "properties": { "enabled": { "const": true }, "scopes": { "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["app", "session"] } }, "topK": { "type": "integer", "minimum": 1, "maximum": 20 }, "chunkSize": { "type": "integer", "minimum": 200, "maximum": 8e3 }, "chunkOverlap": { "type": "integer", "minimum": 0, "maximum": 2e3 } } }, "streaming": { "type": "object", "required": ["defaultMode"], "additionalProperties": false, "properties": { "defaultMode": { "enum": ["text", "events"] } } } } };
 function validate44(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   let vErrors = null;
@@ -10824,7 +10824,7 @@ function validate57(data, { instancePath = "", parentData, parentDataProperty, r
   validate57.errors = vErrors;
   return errors === 0;
 }
-var nodeV8 = validate59;
+var nodeBeta1 = validate59;
 function validate59(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   ;
   let vErrors = null;
@@ -15019,8 +15019,8 @@ function validate67(data, { instancePath = "", parentData, parentDataProperty, r
   validate67.errors = vErrors;
   return errors === 0;
 }
-var pluginV8 = validate69;
-var schema127 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://agcomm.local/schemas/ai/v8/plugin.schema.json", "title": "AgComm .ai Runtime bundle manifest v8", "type": "object", "required": ["id", "name", "description", "version", "sdkVersion", "language", "entry", "runtime", "source", "kind", "permissions", "tools", "integrity"], "properties": { "id": { "$ref": "#/definitions/id" }, "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "description": { "type": "string", "maxLength": 2e3 }, "version": { "type": "string", "minLength": 1, "maxLength": 32 }, "sdkVersion": { "const": "1" }, "language": { "const": "typescript" }, "entry": { "const": "dist/index.js" }, "runtime": { "const": "runtime" }, "source": { "const": "custom" }, "kind": { "enum": ["plugin", "code", "workspace-hook", "flow-hook"] }, "author": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "url": { "type": "string", "pattern": "^https://", "maxLength": 2048 } } }, "license": { "type": "string", "minLength": 1, "maxLength": 64 }, "homepage": { "type": "string", "pattern": "^https://", "maxLength": 2048 }, "permissions": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/permission" } }, "tools": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "type": "object", "required": ["name", "description", "permissions"], "additionalProperties": false, "properties": { "name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,47}$" }, "description": { "type": "string", "minLength": 1, "maxLength": 500 }, "inputSchema": { "type": "object" }, "outputSchema": { "type": "object" }, "permissions": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/permission" } } } } }, "limits": { "type": "object", "additionalProperties": false, "properties": { "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 12e4 }, "maxOutputBytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 }, "maxConcurrency": { "type": "integer", "minimum": 1, "maximum": 16 } } }, "integrity": { "type": "string", "pattern": "^sha256-[A-Za-z0-9+/]{43}=$", "maxLength": 128 }, "signature": { "type": "object", "required": ["algorithm", "keyId", "value"], "additionalProperties": false, "properties": { "algorithm": { "const": "Ed25519" }, "keyId": { "type": "string", "minLength": 1, "maxLength": 128 }, "value": { "type": "string", "minLength": 40, "maxLength": 256 } } } }, "additionalProperties": false, "allOf": [{ "if": { "properties": { "kind": { "const": "code" } } }, "then": { "properties": { "tools": { "minItems": 1, "maxItems": 1, "items": { "properties": { "name": { "const": "run" } }, "required": ["inputSchema", "outputSchema"] } } } } }, { "if": { "properties": { "kind": { "const": "workspace-hook" } } }, "then": { "properties": { "tools": { "maxItems": 7, "items": { "properties": { "name": { "enum": ["onStart", "beforeModel", "afterModel", "beforeTool", "afterTool", "onFinish", "onError"] } }, "required": ["inputSchema", "outputSchema"] } } } } }, { "if": { "properties": { "kind": { "const": "flow-hook" } } }, "then": { "properties": { "tools": { "maxItems": 3, "items": { "properties": { "name": { "enum": ["beforeNode", "afterNode", "onNodeError"] } }, "required": ["inputSchema", "outputSchema"] } } } } }], "definitions": { "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, "permission": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}:[a-z][a-z0-9.-]{0,63}$" } } };
+var pluginBeta1 = validate69;
+var schema127 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://agcomm.local/schemas/ai/beta-one/plugin.schema.json", "title": "AgComm .ai Runtime bundle manifest Beta 1", "type": "object", "required": ["id", "name", "description", "version", "sdkVersion", "language", "entry", "runtime", "source", "kind", "permissions", "tools", "integrity"], "properties": { "id": { "$ref": "#/definitions/id" }, "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "description": { "type": "string", "maxLength": 2e3 }, "version": { "type": "string", "minLength": 1, "maxLength": 32 }, "sdkVersion": { "const": "1" }, "language": { "const": "typescript" }, "entry": { "const": "dist/index.js" }, "runtime": { "const": "runtime" }, "source": { "const": "custom" }, "kind": { "enum": ["plugin", "code", "workspace-hook", "flow-hook"] }, "author": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "url": { "type": "string", "pattern": "^https://", "maxLength": 2048 } } }, "license": { "type": "string", "minLength": 1, "maxLength": 64 }, "homepage": { "type": "string", "pattern": "^https://", "maxLength": 2048 }, "permissions": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/permission" } }, "tools": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "type": "object", "required": ["name", "description", "permissions"], "additionalProperties": false, "properties": { "name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,47}$" }, "description": { "type": "string", "minLength": 1, "maxLength": 500 }, "inputSchema": { "type": "object" }, "outputSchema": { "type": "object" }, "permissions": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/permission" } } } } }, "limits": { "type": "object", "additionalProperties": false, "properties": { "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 12e4 }, "maxOutputBytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 }, "maxConcurrency": { "type": "integer", "minimum": 1, "maximum": 16 } } }, "integrity": { "type": "string", "pattern": "^sha256-[A-Za-z0-9+/]{43}=$", "maxLength": 128 }, "signature": { "type": "object", "required": ["algorithm", "keyId", "value"], "additionalProperties": false, "properties": { "algorithm": { "const": "Ed25519" }, "keyId": { "type": "string", "minLength": 1, "maxLength": 128 }, "value": { "type": "string", "minLength": 40, "maxLength": 256 } } } }, "additionalProperties": false, "allOf": [{ "if": { "properties": { "kind": { "const": "code" } } }, "then": { "properties": { "tools": { "minItems": 1, "maxItems": 1, "items": { "properties": { "name": { "const": "run" } }, "required": ["inputSchema", "outputSchema"] } } } } }, { "if": { "properties": { "kind": { "const": "workspace-hook" } } }, "then": { "properties": { "tools": { "maxItems": 7, "items": { "properties": { "name": { "enum": ["onStart", "beforeModel", "afterModel", "beforeTool", "afterTool", "onFinish", "onError"] } }, "required": ["inputSchema", "outputSchema"] } } } } }, { "if": { "properties": { "kind": { "const": "flow-hook" } } }, "then": { "properties": { "tools": { "maxItems": 3, "items": { "properties": { "name": { "enum": ["beforeNode", "afterNode", "onNodeError"] } }, "required": ["inputSchema", "outputSchema"] } } } } }], "definitions": { "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, "permission": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}:[a-z][a-z0-9.-]{0,63}$" } } };
 function validate69(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   ;
   let vErrors = null;
@@ -18261,7 +18261,7 @@ function assertTimeZone2(timezone) {
   }
 }
 
-// ../../lib/ai-package-v5.ts
+// ../../lib/ai-package-v5-format.ts
 function parseJson2(text2, path) {
   if (text2 === void 0) throw new AiPackageValidationError("MISSING_FILE", "parse", `.ai \u5305\u7F3A\u5C11 ${path}`);
   try {
@@ -18416,7 +18416,7 @@ async function parseAiPackageV5(buffer, fallbackName = "agent-project") {
   };
 }
 
-// ../../lib/ai-package-v6.ts
+// ../../lib/ai-package-v6-format.ts
 var HOOK_OPERATIONS = /* @__PURE__ */ new Set(["onStart", "beforeModel", "afterModel", "beforeTool", "afterTool", "onFinish", "onError"]);
 function parseJson3(text2, path) {
   if (text2 === void 0) throw new AiPackageValidationError("MISSING_FILE", "parse", `.ai \u5305\u7F3A\u5C11 ${path}`);
@@ -18514,7 +18514,7 @@ async function parseAiPackageV6(buffer, fallbackName = "agent-project") {
   return { ...normalized, formatVersion: 6, plugins: restoredPlugins };
 }
 
-// ../../lib/ai-package-v7.ts
+// ../../lib/ai-package-v7-format.ts
 function parseJson4(text2, path) {
   if (text2 === void 0) throw new AiPackageValidationError("MISSING_FILE", "parse", `.ai \u5305\u7F3A\u5C11 ${path}`);
   try {
@@ -18563,7 +18563,7 @@ async function parseAiPackageV7(buffer, fallbackName = "agent-project") {
   return { ...normalized, formatVersion: 7, ...restoredInteraction ? { interaction: restoredInteraction } : {} };
 }
 
-// ../../lib/ai-package-v8.ts
+// ../../lib/ai-package-beta-one-format.ts
 var FLOW_HOOK_OPERATIONS2 = /* @__PURE__ */ new Set(["beforeNode", "afterNode", "onNodeError"]);
 function parseJson5(text2, path) {
   if (text2 === void 0) throw new AiPackageValidationError("MISSING_FILE", "parse", `.ai \u5305\u7F3A\u5C11 ${path}`);
@@ -18609,7 +18609,7 @@ function validateFlowHooks(flow2, plugins) {
   if (issues.length) throw new AiPackageValidationError("REFERENCE_INVALID", "validate", `${issues[0].path}\uFF1A${issues[0].message}`, issues);
   return hookIds;
 }
-function buildAiPackageV8Files(project, timestamp) {
+function buildAiPackageBeta1Files(project, timestamp) {
   const files = buildAiPackageV7Files(project, timestamp);
   const manifest = parseJson5(files["manifest.json"], "manifest.json");
   files["manifest.json"] = JSON.stringify({ ...manifest, formatVersion: 8 }, null, 2);
@@ -18618,20 +18618,20 @@ function buildAiPackageV8Files(project, timestamp) {
   files["flow/flow.json"] = JSON.stringify({ ...flow2, config: { ...config, ...project.flowHookIds?.length ? { hookIds: project.flowHookIds } : {} } }, null, 2);
   return files;
 }
-function createAiPackageV8(project, timestamp) {
-  return createZip(buildAiPackageV8Files(project, timestamp));
+function createAiPackageBeta1(project, timestamp) {
+  return createZip(buildAiPackageBeta1Files(project, timestamp));
 }
-async function parseAiPackageV8(buffer, fallbackName = "agent-project") {
+async function parseAiPackageBeta1(buffer, fallbackName = "agent-project") {
   const files = await readZip(buffer);
   const manifest = parseJson5(files["manifest.json"], "manifest.json");
-  assertSchema(manifestV8, manifest, "manifest.json");
+  assertSchema(manifestBeta1, manifest, "manifest.json");
   const flow2 = parseJson5(files["flow/flow.json"], "flow/flow.json");
-  assertSchema(flowV8, flow2, "flow/flow.json");
-  for (const path of Object.keys(files).filter((name) => /^flow\/nodes\/[^/]+\.json$/.test(name))) assertSchema(nodeV8, parseJson5(files[path], path), path);
+  assertSchema(flowBeta1, flow2, "flow/flow.json");
+  for (const path of Object.keys(files).filter((name) => /^flow\/nodes\/[^/]+\.json$/.test(name))) assertSchema(nodeBeta1, parseJson5(files[path], path), path);
   const plugins = /* @__PURE__ */ new Map();
   for (const path of Object.keys(files).filter((name) => /^plugins\/[^/]+\/agent-plugin\.json$/.test(name))) {
     const plugin2 = parseJson5(files[path], path);
-    assertSchema(pluginV8, plugin2, path);
+    assertSchema(pluginBeta1, plugin2, path);
     plugins.set(path.split("/")[1], plugin2);
   }
   const flowHookIds = validateFlowHooks(flow2, plugins);
@@ -18906,9 +18906,9 @@ async function packageApp(app) {
   const compiled = await compileApp(app);
   try {
     const { formatVersion: _formatVersion, ...project } = compiled.project;
-    const archive = createAiPackageV8(project);
+    const archive = createAiPackageBeta1(project);
     const buffer = await archive.arrayBuffer();
-    await parseAiPackageV8(buffer, compiled.project.name);
+    await parseAiPackageBeta1(buffer, compiled.project.name);
     return { compiled, bytes: new Uint8Array(buffer) };
   } catch (error) {
     wrap(error, "PACKAGE_BUILD_FAILED", ".ai \u6784\u5EFA\u6216 round-trip \u6821\u9A8C\u5931\u8D25");
