@@ -13,7 +13,7 @@ import type {
 } from "@agcomm/ai-runtime";
 import type { GatewayInstallOptions, RuntimeGatewayClient } from "@agcomm/gateway";
 import { buildAi } from "./build.ts";
-import type { AppDefinition } from "./model.ts";
+import type { AppDefinition } from "./model-types.ts";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -1,51 +1,4 @@
-// ../../domain/flow/editor.ts
-function connectionId(edge, index = 0) {
-  return edge.id?.trim() || `edge_${index}`;
-}
-function createConnection(from, to, edges) {
-  const stem = `edge_${from.slice(0, 20)}_${to.slice(0, 20)}`;
-  let id = stem;
-  let suffix = 2;
-  const ids = new Set(edges.map((edge, index) => connectionId(edge, index)));
-  while (ids.has(id)) id = `${stem}_${suffix++}`;
-  return { id, from, to };
-}
-function autoLayoutNodes(nodes, edges) {
-  const ids = new Set(nodes.map((node2) => node2.id));
-  const indegree = new Map(nodes.map((node2) => [node2.id, 0]));
-  const outgoing = new Map(nodes.map((node2) => [node2.id, []]));
-  for (const edge of edges) if (ids.has(edge.from) && ids.has(edge.to)) {
-    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
-    outgoing.get(edge.from)?.push(edge.to);
-  }
-  const levels = /* @__PURE__ */ new Map();
-  const queue = nodes.filter((node2) => (indegree.get(node2.id) ?? 0) === 0).map((node2) => node2.id);
-  for (const id of queue) levels.set(id, 0);
-  while (queue.length) {
-    const id = queue.shift();
-    for (const target of outgoing.get(id) ?? []) {
-      levels.set(target, Math.max(levels.get(target) ?? 0, (levels.get(id) ?? 0) + 1));
-      indegree.set(target, (indegree.get(target) ?? 1) - 1);
-      if (indegree.get(target) === 0) queue.push(target);
-    }
-  }
-  const fallback = Math.max(0, ...levels.values()) + 1;
-  for (const node2 of nodes) if (!levels.has(node2.id)) levels.set(node2.id, fallback);
-  const columns = /* @__PURE__ */ new Map();
-  for (const node2 of nodes) {
-    const level = levels.get(node2.id) ?? 0;
-    columns.set(level, [...columns.get(level) ?? [], node2]);
-  }
-  return nodes.map((node2) => {
-    const level = levels.get(node2.id) ?? 0;
-    const column = columns.get(level) ?? [];
-    const row = column.findIndex((item) => item.id === node2.id);
-    const height = Math.max(1, column.length) * 112;
-    return { ...node2, x: 24 + level * 210, y: Math.max(24, 250 - height / 2 + row * 112) };
-  });
-}
-
-// src/background-schedule.ts
+// ../shared/background-schedule.ts
 var FIELDS = [
   { min: 0, max: 59 },
   { min: 0, max: 23 },
@@ -59,26 +12,37 @@ function fieldValue(raw, field) {
   if (value < field.min || value > field.max) throw new Error(`Cron value out of range: ${raw}`);
   return field.sunday && value === 7 ? 0 : value;
 }
+function parseStep(source, part, field) {
+  const step = source === void 0 ? 1 : Number(source);
+  if (!Number.isInteger(step) || step < 1 || step > field.max - field.min + 1) {
+    throw new Error(`Invalid Cron step: ${part}`);
+  }
+  return step;
+}
+function parseRange(source, part, field, step) {
+  if (source === "*") return { start: field.min, end: field.max, step };
+  const range = source.split("-");
+  if (range.length > 2) throw new Error(`Invalid Cron range: ${part}`);
+  const start = fieldValue(range[0], field);
+  let end = range.length === 2 ? fieldValue(range[1], field) : start;
+  if (field.sunday && range.length === 2 && range[1] === "7") end = 7;
+  if (start > end) throw new Error(`Descending Cron range is not supported: ${part}`);
+  return { start, end, step };
+}
+function parsePart(part, field) {
+  if (!part) throw new Error("Cron field contains an empty list item");
+  const [rangeSource, stepSource, extra] = part.split("/");
+  if (extra !== void 0) throw new Error(`Invalid Cron step: ${part}`);
+  return parseRange(rangeSource, part, field, parseStep(stepSource, part, field));
+}
+function addRange(values, range, field) {
+  for (let value = range.start; value <= range.end; value += range.step) {
+    values.add(field.sunday && value === 7 ? 0 : value);
+  }
+}
 function parseField(source, field) {
   const values = /* @__PURE__ */ new Set();
-  for (const part of source.split(",")) {
-    if (!part) throw new Error("Cron field contains an empty list item");
-    const [rangeSource, stepSource, extra] = part.split("/");
-    if (extra !== void 0) throw new Error(`Invalid Cron step: ${part}`);
-    const step = stepSource === void 0 ? 1 : Number(stepSource);
-    if (!Number.isInteger(step) || step < 1 || step > field.max - field.min + 1) throw new Error(`Invalid Cron step: ${part}`);
-    let start = field.min;
-    let end = field.max;
-    if (rangeSource !== "*") {
-      const range = rangeSource.split("-");
-      if (range.length > 2) throw new Error(`Invalid Cron range: ${part}`);
-      start = fieldValue(range[0], field);
-      end = range.length === 2 ? fieldValue(range[1], field) : start;
-      if (field.sunday && range.length === 2 && range[1] === "7") end = 7;
-      if (start > end) throw new Error(`Descending Cron range is not supported: ${part}`);
-    }
-    for (let value = start; value <= end; value += step) values.add(field.sunday && value === 7 ? 0 : value);
-  }
+  for (const part of source.split(",")) addRange(values, parsePart(part, field), field);
   return values;
 }
 function parseCronExpression(expression) {
@@ -115,7 +79,13 @@ function zonedParts(date, timezone) {
   }).formatToParts(date);
   const value = (type) => Number(parts.find((part) => part.type === type)?.value);
   const weekday = parts.find((part) => part.type === "weekday")?.value;
-  return { minute: value("minute"), hour: value("hour"), day: value("day"), month: value("month"), weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekday ?? "") };
+  return {
+    minute: value("minute"),
+    hour: value("hour"),
+    day: value("day"),
+    month: value("month"),
+    weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekday ?? "")
+  };
 }
 function cronMatches(parsed, date, timezone) {
   const value = zonedParts(date, timezone);
@@ -323,7 +293,7 @@ function createHandlerTools(operations, handlers, schemas, permissions, subject)
   }]));
 }
 
-// src/code.ts
+// src/code-schema.ts
 var ALLOWED_SCHEMA_KEYS = /* @__PURE__ */ new Set([
   "type",
   "properties",
@@ -361,46 +331,79 @@ function assertJsonValue(value, path, depth = 0) {
   }
   schemaError(path, "value must be JSON serializable");
 }
-function assertCodeSchema(schema, path) {
+function assertSchemaObject(schema, path) {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) schemaError(path, "schema must be an object");
-  for (const key of Object.keys(schema)) if (!ALLOWED_SCHEMA_KEYS.has(key)) schemaError(path, `unsupported keyword ${key}`);
+  for (const key of Object.keys(schema)) {
+    if (!ALLOWED_SCHEMA_KEYS.has(key)) schemaError(path, `unsupported keyword ${key}`);
+  }
+}
+function schemaTypes(schema, path) {
   const types = Array.isArray(schema.type) ? schema.type : schema.type === void 0 ? [] : [schema.type];
-  if (!types.length || types.some((type) => typeof type !== "string" || !JSON_TYPES.has(type))) schemaError(`${path}.type`, "must declare supported JSON type(s)");
+  if (!types.length || types.some((type) => typeof type !== "string" || !JSON_TYPES.has(type))) {
+    schemaError(`${path}.type`, "must declare supported JSON type(s)");
+  }
   if (new Set(types).size !== types.length) schemaError(`${path}.type`, "must not contain duplicates");
+  return types;
+}
+function assertValueConstraints(schema, path) {
   if (schema.enum !== void 0) {
     if (!Array.isArray(schema.enum) || !schema.enum.length) schemaError(`${path}.enum`, "must be a non-empty array");
     assertJsonValue(schema.enum, `${path}.enum`);
   }
   if (Object.hasOwn(schema, "const")) assertJsonValue(schema.const, `${path}.const`);
-  if (schema.pattern !== void 0) {
-    if (typeof schema.pattern !== "string") schemaError(`${path}.pattern`, "must be a string");
-    try {
-      new RegExp(schema.pattern, "u");
-    } catch {
-      schemaError(`${path}.pattern`, "must be a valid regular expression");
+  if (schema.pattern !== void 0) assertPattern(schema.pattern, path);
+}
+function assertPattern(pattern, path) {
+  if (typeof pattern !== "string") schemaError(`${path}.pattern`, "must be a string");
+  try {
+    new RegExp(pattern, "u");
+  } catch {
+    schemaError(`${path}.pattern`, "must be a valid regular expression");
+  }
+}
+function assertNumericConstraints(schema, path) {
+  for (const key of ["minLength", "maxLength", "minItems", "maxItems"]) {
+    const value = schema[key];
+    if (value !== void 0 && (!Number.isInteger(value) || Number(value) < 0)) {
+      schemaError(`${path}.${key}`, "must be a non-negative integer");
     }
   }
-  for (const key of ["minLength", "maxLength", "minItems", "maxItems"]) {
-    if (schema[key] !== void 0 && (!Number.isInteger(schema[key]) || Number(schema[key]) < 0)) schemaError(`${path}.${key}`, "must be a non-negative integer");
-  }
   for (const key of ["minimum", "maximum"]) {
-    if (schema[key] !== void 0 && (typeof schema[key] !== "number" || !Number.isFinite(schema[key]))) schemaError(`${path}.${key}`, "must be a finite number");
+    const value = schema[key];
+    if (value !== void 0 && (typeof value !== "number" || !Number.isFinite(value))) {
+      schemaError(`${path}.${key}`, "must be a finite number");
+    }
   }
+}
+function assertObjectConstraints(schema, path) {
   if (schema.required !== void 0) {
-    if (!Array.isArray(schema.required) || schema.required.some((key) => typeof key !== "string") || new Set(schema.required).size !== schema.required.length) {
+    const required = schema.required;
+    if (!Array.isArray(required) || required.some((key) => typeof key !== "string") || new Set(required).size !== required.length) {
       schemaError(`${path}.required`, "must be an array of unique strings");
     }
   }
-  if (schema.additionalProperties !== void 0 && typeof schema.additionalProperties !== "boolean") schemaError(`${path}.additionalProperties`, "must be boolean");
-  if (schema.properties !== void 0) {
-    if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) schemaError(`${path}.properties`, "must be an object");
-    for (const [key, child] of Object.entries(schema.properties)) assertCodeSchema(child, `${path}.properties.${key}`);
+  if (schema.additionalProperties !== void 0 && typeof schema.additionalProperties !== "boolean") {
+    schemaError(`${path}.additionalProperties`, "must be boolean");
   }
+  if (schema.properties === void 0) return;
+  if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) {
+    schemaError(`${path}.properties`, "must be an object");
+  }
+  for (const [key, child] of Object.entries(schema.properties)) {
+    assertCodeSchema(child, `${path}.properties.${key}`);
+  }
+}
+function assertCodeSchema(schema, path) {
+  assertSchemaObject(schema, path);
+  schemaTypes(schema, path);
+  assertValueConstraints(schema, path);
+  assertNumericConstraints(schema, path);
+  assertObjectConstraints(schema, path);
   if (schema.items !== void 0) assertCodeSchema(schema.items, `${path}.items`);
 }
 function outputKindForCode(schema) {
   assertCodeSchema(schema, "outputSchema");
-  const types = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((type2) => type2 !== "null");
+  const types = schemaTypes(schema, "outputSchema").filter((type2) => type2 !== "null");
   if (types.length !== 1) schemaError("outputSchema.type", "must contain exactly one non-null type");
   const type = types[0];
   if (type === "integer" || type === "number") return "number";
@@ -410,6 +413,8 @@ function outputKindForCode(schema) {
   if (type === "string") return "string";
   return schemaError("outputSchema.type", "null-only outputs cannot be stored in a flow variable");
 }
+
+// src/code.ts
 function defineCode(options) {
   const permissions = validateBundleDefinition(options, "Code");
   assertCodeSchema(options.inputSchema, "inputSchema");
@@ -418,14 +423,60 @@ function defineCode(options) {
   return Object.freeze({ ...options, permissions });
 }
 
-// src/model.ts
-var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-var VARIABLE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+// ../../domain/flow/editor.ts
+function connectionId(edge, index = 0) {
+  return edge.id?.trim() || `edge_${index}`;
+}
+function createConnection(from, to, edges) {
+  const stem = `edge_${from.slice(0, 20)}_${to.slice(0, 20)}`;
+  let id = stem;
+  let suffix = 2;
+  const ids = new Set(edges.map((edge, index) => connectionId(edge, index)));
+  while (ids.has(id)) id = `${stem}_${suffix++}`;
+  return { id, from, to };
+}
+function autoLayoutNodes(nodes, edges) {
+  const ids = new Set(nodes.map((node2) => node2.id));
+  const indegree = new Map(nodes.map((node2) => [node2.id, 0]));
+  const outgoing = new Map(nodes.map((node2) => [node2.id, []]));
+  for (const edge of edges) if (ids.has(edge.from) && ids.has(edge.to)) {
+    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+    outgoing.get(edge.from)?.push(edge.to);
+  }
+  const levels = /* @__PURE__ */ new Map();
+  const queue = nodes.filter((node2) => (indegree.get(node2.id) ?? 0) === 0).map((node2) => node2.id);
+  for (const id of queue) levels.set(id, 0);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const target of outgoing.get(id) ?? []) {
+      levels.set(target, Math.max(levels.get(target) ?? 0, (levels.get(id) ?? 0) + 1));
+      indegree.set(target, (indegree.get(target) ?? 1) - 1);
+      if (indegree.get(target) === 0) queue.push(target);
+    }
+  }
+  const fallback = Math.max(0, ...levels.values()) + 1;
+  for (const node2 of nodes) if (!levels.has(node2.id)) levels.set(node2.id, fallback);
+  const columns = /* @__PURE__ */ new Map();
+  for (const node2 of nodes) {
+    const level = levels.get(node2.id) ?? 0;
+    columns.set(level, [...columns.get(level) ?? [], node2]);
+  }
+  return nodes.map((node2) => {
+    const level = levels.get(node2.id) ?? 0;
+    const column = columns.get(level) ?? [];
+    const row = column.findIndex((item) => item.id === node2.id);
+    const height = Math.max(1, column.length) * 112;
+    return { ...node2, x: 24 + level * 210, y: Math.max(24, 250 - height / 2 + row * 112) };
+  });
+}
+
+// src/model-symbols.ts
 var VALUE_REF = /* @__PURE__ */ Symbol("agcomm.ai-sdk.value-ref");
 var TEMPLATE = /* @__PURE__ */ Symbol("agcomm.ai-sdk.template");
 var APP = /* @__PURE__ */ Symbol("agcomm.ai-sdk.app");
 var BRANCH_REF = /* @__PURE__ */ Symbol("agcomm.ai-sdk.branch-ref");
-var RESERVED_VARIABLES = /* @__PURE__ */ new Set(["session_id", "conversation_history", "knowledge_context", "background_trigger", "gateway_run_id"]);
+
+// src/model-types.ts
 var AiSdkError = class extends Error {
   code;
   issues;
@@ -436,6 +487,12 @@ var AiSdkError = class extends Error {
     this.issues = issues;
   }
 };
+
+// src/model-values.ts
+var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+var VARIABLE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+var REFERENCE_PATTERN = /\{\{\s*([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)\s*\}\}/g;
+var RESERVED_VARIABLES = /* @__PURE__ */ new Set(["session_id", "conversation_history", "knowledge_context", "background_trigger", "gateway_run_id"]);
 function fail(code, message, issue = {}) {
   throw new AiSdkError(code, message, [{ code, message, ...issue }]);
 }
@@ -454,18 +511,10 @@ function variableRef(kind, name, value) {
   return Object.freeze({ name, kind, defaultValue: value, [VALUE_REF]: "variable" });
 }
 var variable = {
-  string(name, defaultValue = "") {
-    return variableRef("string", name, defaultValue);
-  },
-  markdown(name, defaultValue = "") {
-    return variableRef("markdown", name, defaultValue);
-  },
-  number(name, defaultValue = 0) {
-    return variableRef("number", name, defaultValue);
-  },
-  boolean(name, defaultValue = false) {
-    return variableRef("boolean", name, defaultValue);
-  },
+  string: (name, defaultValue = "") => variableRef("string", name, defaultValue),
+  markdown: (name, defaultValue = "") => variableRef("markdown", name, defaultValue),
+  number: (name, defaultValue = 0) => variableRef("number", name, defaultValue),
+  boolean: (name, defaultValue = false) => variableRef("boolean", name, defaultValue),
   array(name, defaultValue = []) {
     return variableRef("array", name, defaultValue);
   },
@@ -488,9 +537,7 @@ function isTemplate(value) {
 function template(strings, ...values) {
   let text2 = strings[0] ?? "";
   values.forEach((value, index) => {
-    if (isValueRef(value)) text2 += `{{${value.name}}}`;
-    else if (isTemplate(value)) text2 += value.text;
-    else text2 += String(value ?? "");
+    text2 += isValueRef(value) ? `{{${value.name}}}` : isTemplate(value) ? value.text : String(value ?? "");
     text2 += strings[index + 1] ?? "";
   });
   return Object.freeze({ text: text2, [TEMPLATE]: true });
@@ -498,14 +545,7 @@ function template(strings, ...values) {
 function defineSkill(options) {
   assertId(options.id, "Skill");
   if (!options.name.trim()) fail("INVALID_SKILL", `Skill \u201C${options.id}\u201D \u7F3A\u5C11\u540D\u79F0`);
-  return Object.freeze({
-    id: options.id,
-    name: options.name,
-    description: options.description ?? "",
-    category: options.category ?? "\u672A\u5206\u7C7B",
-    prompt: options.prompt,
-    plugins: [...options.plugins ?? []]
-  });
+  return Object.freeze({ id: options.id, name: options.name, description: options.description ?? "", category: options.category ?? "\u672A\u5206\u7C7B", prompt: options.prompt, plugins: [...options.plugins ?? []] });
 }
 function encodeDefault(ref) {
   if (ref.kind === "array" || ref.kind === "object") {
@@ -524,16 +564,11 @@ function serializeValue(value) {
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, serializeValue(item)]));
   return value;
 }
-var REFERENCE_PATTERN = /\{\{\s*([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*)\s*\}\}/g;
 function collectReferenceNames(value, names = /* @__PURE__ */ new Set()) {
   const serialized = serializeValue(value);
-  if (typeof serialized === "string") {
-    for (const match of serialized.matchAll(REFERENCE_PATTERN)) names.add(match[1].split(".")[0]);
-  } else if (Array.isArray(serialized)) {
-    for (const item of serialized) collectReferenceNames(item, names);
-  } else if (serialized && typeof serialized === "object") {
-    for (const item of Object.values(serialized)) collectReferenceNames(item, names);
-  }
+  if (typeof serialized === "string") for (const match of serialized.matchAll(REFERENCE_PATTERN)) names.add(match[1].split(".")[0]);
+  else if (Array.isArray(serialized)) for (const item of serialized) collectReferenceNames(item, names);
+  else if (serialized && typeof serialized === "object") for (const item of Object.values(serialized)) collectReferenceNames(item, names);
   return names;
 }
 function inferredKind(value) {
@@ -542,149 +577,129 @@ function inferredKind(value) {
   if (typeof value === "number") return "number";
   if (typeof value === "boolean") return "boolean";
   if (Array.isArray(value)) return "array";
-  if (value && typeof value === "object") return "object";
-  return "markdown";
+  return value && typeof value === "object" ? "object" : "markdown";
 }
-function nodeDefaults(type) {
-  if (type === "INPUT") return { title: "\u7528\u6237\u8F93\u5165", icon: "\u2328", tone: "blue", note: "\u6536\u96C6\u8FD0\u884C\u53D8\u91CF" };
-  if (type === "SKILL") return { title: "\u8C03\u7528 Skill", icon: "\u2726", tone: "violet", note: "\u8C03\u7528 Skill" };
-  if (type === "WORKSPACE") return { title: "Agent Workspace", icon: "\u25CE", tone: "cyan", note: "Agent \u81EA\u4E3B\u8C03\u7528 Skills" };
-  if (type === "HTTP") return { title: "HTTP \u8BF7\u6C42", icon: "\u2301", tone: "slate", note: "\u53D1\u9001 HTTPS \u8BF7\u6C42" };
-  if (type === "CONDITION") return { title: "\u6761\u4EF6\u5206\u652F", icon: "\u25C7", tone: "amber", note: "\u8FD0\u884C\u65F6\u6761\u4EF6\u5224\u65AD" };
-  if (type === "CODE") return { title: "TypeScript \u4EE3\u7801", icon: "{ }", tone: "slate", note: "\u6267\u884C\u786E\u5B9A\u6027\u4EE3\u7801" };
-  if (type === "CONTACT") return { title: "\u8054\u7CFB\u7528\u6237", icon: "@", tone: "cyan", note: "\u5199\u5165 Inbox \u5E76\u6295\u9012\u901A\u77E5" };
-  if (type === "OUTPUT") return { title: "\u8F93\u51FA", icon: "\u2197", tone: "green", note: "\u8FD4\u56DE\u8FD0\u884C\u7ED3\u679C" };
-  return { title: "\u5F00\u59CB", icon: "\u25B6", tone: "mint", note: "\u6D41\u7A0B\u5165\u53E3" };
+
+// src/flow-graph.ts
+var styles = {
+  START: { title: "\u5F00\u59CB", icon: "\u25B6", tone: "mint", note: "\u6D41\u7A0B\u5165\u53E3" },
+  INPUT: { title: "\u7528\u6237\u8F93\u5165", icon: "\u2328", tone: "blue", note: "\u6536\u96C6\u8FD0\u884C\u53D8\u91CF" },
+  SKILL: { title: "\u8C03\u7528 Skill", icon: "\u2726", tone: "violet", note: "\u8C03\u7528 Skill" },
+  WORKSPACE: { title: "Agent Workspace", icon: "\u25CE", tone: "cyan", note: "Agent \u81EA\u4E3B\u8C03\u7528 Skills" },
+  HTTP: { title: "HTTP \u8BF7\u6C42", icon: "\u2301", tone: "slate", note: "\u53D1\u9001 HTTPS \u8BF7\u6C42" },
+  CONDITION: { title: "\u6761\u4EF6\u5206\u652F", icon: "\u25C7", tone: "amber", note: "\u8FD0\u884C\u65F6\u6761\u4EF6\u5224\u65AD" },
+  CODE: { title: "TypeScript \u4EE3\u7801", icon: "{ }", tone: "slate", note: "\u6267\u884C\u786E\u5B9A\u6027\u4EE3\u7801" },
+  CONTACT: { title: "\u8054\u7CFB\u7528\u6237", icon: "@", tone: "cyan", note: "\u5199\u5165 Inbox \u5E76\u6295\u9012\u901A\u77E5" },
+  OUTPUT: { title: "\u8F93\u51FA", icon: "\u2197", tone: "green", note: "\u8FD4\u56DE\u8FD0\u884C\u7ED3\u679C" }
+};
+function createFlowGraph(initial) {
+  const start = styles.START;
+  const state = { id: crypto.randomUUID(), nodes: [{ id: "start", title: start.title, type: "START", icon: start.icon, x: 24, y: 180, tone: start.tone, note: start.note, outputVar: "" }], edges: [], variables: /* @__PURE__ */ new Map(), producers: /* @__PURE__ */ new Map(), positions: /* @__PURE__ */ new Map(), branchConsumers: /* @__PURE__ */ new Map(), lastNodeId: "start" };
+  initial.forEach((ref) => registerVariable(state, ref));
+  return state;
 }
+function registerVariable(state, ref) {
+  const current = state.variables.get(ref.name);
+  if (current && (current.kind !== ref.kind || encodeDefault(current) !== encodeDefault(ref))) fail("DUPLICATE_VARIABLE", `\u53D8\u91CF\u201C${ref.name}\u201D\u4F7F\u7528\u4E86\u51B2\u7A81\u7684\u7C7B\u578B\u6216\u9ED8\u8BA4\u503C`, { path: ref.name });
+  if (!current) state.variables.set(ref.name, ref);
+}
+function registerNested(state, value) {
+  if (isValueRef(value)) return registerVariable(state, value);
+  if (Array.isArray(value)) return value.forEach((item) => registerNested(state, item));
+  if (value && typeof value === "object" && !isTemplate(value)) Object.values(value).forEach((item) => registerNested(state, item));
+}
+function outputRef(state, nodeId, option, kind) {
+  const existing = typeof option === "string" ? state.variables.get(option) : option;
+  const name = typeof option === "string" ? option : option?.name ?? `${nodeId}_output`;
+  if (RESERVED_VARIABLES.has(name)) fail("RESERVED_VARIABLE", `\u8282\u70B9\u201C${nodeId}\u201D\u4E0D\u80FD\u5199\u5165 runtime \u4FDD\u7559\u53D8\u91CF\u201C${name}\u201D`, { nodeId });
+  const ref = existing ?? variableRef(kind, name, defaultFor(kind));
+  registerVariable(state, ref);
+  const producer = state.producers.get(name);
+  if (producer && producer !== nodeId) fail("DUPLICATE_OUTPUT", `\u8F93\u51FA\u53D8\u91CF\u201C${name}\u201D\u5DF2\u7531\u8282\u70B9\u201C${producer}\u201D\u5199\u5165`, { nodeId });
+  state.producers.set(name, nodeId);
+  return Object.freeze({ ...ref, id: nodeId, nodeId, [VALUE_REF]: "node", __builderId: state.id });
+}
+function explicitDependencies(state, refs, nodeId, result) {
+  for (const ref of refs) {
+    if (isBranchRef(ref)) {
+      if (state.nodes.find((node2) => node2.id === ref.nodeId)?.type !== "CONDITION") fail("INVALID_DEPENDENCY", `\u8282\u70B9\u201C${nodeId}\u201D\u5F15\u7528\u4E86\u65E0\u6548\u7684\u6761\u4EF6\u5206\u652F`, { nodeId });
+      const key = `${ref.nodeId}:${ref.condition}`;
+      const consumer = state.branchConsumers.get(key);
+      if (consumer && consumer !== nodeId) fail("DUPLICATE_BRANCH_CONSUMER", `\u6761\u4EF6\u8282\u70B9\u201C${ref.nodeId}\u201D\u7684 ${ref.condition} \u5206\u652F\u5DF2\u8FDE\u63A5\u8282\u70B9\u201C${consumer}\u201D`, { nodeId });
+      state.branchConsumers.set(key, nodeId);
+      result.set(ref.nodeId, ref.condition);
+      continue;
+    }
+    if (!isNodeRef(ref) || !state.nodes.some((node2) => node2.id === ref.nodeId)) fail("INVALID_DEPENDENCY", `\u8282\u70B9\u201C${nodeId}\u201D\u5F15\u7528\u4E86\u5176\u4ED6\u6D41\u7A0B\u6216\u5C1A\u672A\u521B\u5EFA\u7684\u4F9D\u8D56`, { nodeId });
+    if (state.nodes.find((node2) => node2.id === ref.nodeId)?.type === "CONDITION") fail("CONDITION_BRANCH_REQUIRED", `\u8282\u70B9\u201C${nodeId}\u201D\u5FC5\u987B\u901A\u8FC7 whenTrue() \u6216 whenFalse() \u8FDE\u63A5\u6761\u4EF6\u8282\u70B9`, { nodeId });
+    result.set(ref.nodeId, result.get(ref.nodeId));
+  }
+}
+function dependencies(state, source, after, nodeId) {
+  registerNested(state, source);
+  const result = /* @__PURE__ */ new Map();
+  for (const name of collectReferenceNames(source)) {
+    const producer = state.producers.get(name);
+    if (producer) result.set(producer, void 0);
+  }
+  if (after !== void 0) explicitDependencies(state, Array.isArray(after) ? after : [after], nodeId, result);
+  else if (!result.size) result.set(state.lastNodeId, void 0);
+  if (after !== void 0 && !result.size) result.set("start", void 0);
+  result.delete(nodeId);
+  return [...result];
+}
+function addFlowNode(state, type, options, config, source, kind, details = {}) {
+  assertId(options.id, "Node");
+  if (options.id === "start" || state.nodes.some((node2) => node2.id === options.id)) fail("DUPLICATE_NODE", `\u8282\u70B9 ID \u201C${options.id}\u201D \u91CD\u590D`, { nodeId: options.id });
+  const refs = dependencies(state, source, options.after, options.id);
+  const output = outputRef(state, options.id, options.output, kind);
+  const style = styles[type];
+  const timeoutMs = options.timeoutMs;
+  if (timeoutMs !== void 0 && (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 6e5)) fail("INVALID_EXECUTION_LIMIT", `\u8282\u70B9\u201C${options.id}\u201D\u7684 timeoutMs \u5FC5\u987B\u4E3A 1\u2013600000 \u7684\u6574\u6570`);
+  state.nodes.push({ id: options.id, title: options.title?.trim() || style.title, type, icon: style.icon, x: options.position?.x ?? 0, y: options.position?.y ?? 0, tone: style.tone, note: details.note ?? style.note, outputVar: output.name, config, ...timeoutMs !== void 0 ? { timeoutMs } : {}, ...details.workspace ? { workspace: details.workspace } : {} });
+  if (options.position) state.positions.set(options.id, options.position);
+  for (const [from, condition] of refs) {
+    const edge = createConnection(from, options.id, state.edges);
+    state.edges.push(condition ? { ...edge, label: condition, condition } : edge);
+  }
+  state.lastNodeId = options.id;
+  return output;
+}
+function finishFlow(state, name, skills, visualizations, interaction, identity, execution) {
+  const nodes = autoLayoutNodes(state.nodes, state.edges).map((node2) => {
+    const position = state.positions.get(node2.id);
+    return position ? { ...node2, ...position } : node2;
+  });
+  return { name, ...identity?.id ? { appId: identity.id } : {}, ...identity?.version ? { appVersion: identity.version } : {}, ...interaction ? { interaction } : {}, ...identity?.background ? { background: identity.background } : {}, ...execution ? { execution } : {}, nodes, edges: state.edges, skills: skills.map((skill) => ({ id: skill.id, name: skill.name, description: skill.description, category: skill.category, prompt: isTemplate(skill.prompt) ? skill.prompt.text : skill.prompt, pluginIds: skill.plugins.map((plugin2) => plugin2.id) })), variables: [...state.variables.values()].map((ref) => ({ name: ref.name, type: ref.kind, defaultValue: encodeDefault(ref) })), visualizations: [...visualizations] };
+}
+
+// src/flow-builder.ts
 var FlowBuilder = class {
-  builderId = crypto.randomUUID();
-  nodes = [];
-  edges = [];
-  variables = /* @__PURE__ */ new Map();
-  variableProducers = /* @__PURE__ */ new Map();
-  explicitPositions = /* @__PURE__ */ new Map();
+  graph;
   skillIds;
-  branchConsumers = /* @__PURE__ */ new Map();
   codeDefinitions = /* @__PURE__ */ new Map();
   hookDefinitions = /* @__PURE__ */ new Map();
-  lastNodeId = "start";
-  constructor(initialVariables, skills) {
+  constructor(initial, skills) {
+    this.graph = createFlowGraph(initial);
     this.skillIds = new Set(skills.map((skill) => skill.id));
-    for (const ref of initialVariables) this.registerVariable(ref);
-    const defaults = nodeDefaults("START");
-    this.nodes.push({ id: "start", title: defaults.title, type: "START", icon: defaults.icon, x: 24, y: 180, tone: defaults.tone, note: defaults.note, outputVar: "" });
-  }
-  registerVariable(ref) {
-    const current = this.variables.get(ref.name);
-    if (current && (current.kind !== ref.kind || encodeDefault(current) !== encodeDefault(ref))) {
-      fail("DUPLICATE_VARIABLE", `\u53D8\u91CF\u201C${ref.name}\u201D\u4F7F\u7528\u4E86\u51B2\u7A81\u7684\u7C7B\u578B\u6216\u9ED8\u8BA4\u503C`, { path: ref.name });
-    }
-    if (!current) this.variables.set(ref.name, ref);
-  }
-  registerValueRefs(value) {
-    if (isValueRef(value)) {
-      this.registerVariable(value);
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach((item) => this.registerValueRefs(item));
-      return;
-    }
-    if (value && typeof value === "object" && !isTemplate(value)) Object.values(value).forEach((item) => this.registerValueRefs(item));
-  }
-  outputRef(nodeId, option, kind) {
-    const existing = typeof option === "string" ? this.variables.get(option) : option;
-    const name = typeof option === "string" ? option : option?.name ?? `${nodeId}_output`;
-    if (RESERVED_VARIABLES.has(name)) fail("RESERVED_VARIABLE", `\u8282\u70B9\u201C${nodeId}\u201D\u4E0D\u80FD\u5199\u5165 runtime \u4FDD\u7559\u53D8\u91CF\u201C${name}\u201D`, { nodeId });
-    const ref = existing ?? variableRef(kind, name, defaultFor(kind));
-    this.registerVariable(ref);
-    const producer = this.variableProducers.get(name);
-    if (producer && producer !== nodeId) fail("DUPLICATE_OUTPUT", `\u8F93\u51FA\u53D8\u91CF\u201C${name}\u201D\u5DF2\u7531\u8282\u70B9\u201C${producer}\u201D\u5199\u5165`, { nodeId });
-    this.variableProducers.set(name, nodeId);
-    return Object.freeze({ ...ref, id: nodeId, nodeId, [VALUE_REF]: "node", __builderId: this.builderId });
-  }
-  resolveDependencies(source, after, nodeId) {
-    this.registerValueRefs(source);
-    const dependencies = /* @__PURE__ */ new Map();
-    for (const name of collectReferenceNames(source)) {
-      const producer = this.variableProducers.get(name);
-      if (producer) dependencies.set(producer, void 0);
-    }
-    if (after !== void 0) {
-      const refs = Array.isArray(after) ? after : [after];
-      for (const ref of refs) {
-        if (isBranchRef(ref)) {
-          const sourceNode = this.nodes.find((node2) => node2.id === ref.nodeId);
-          if (sourceNode?.type !== "CONDITION") fail("INVALID_DEPENDENCY", `\u8282\u70B9\u201C${nodeId}\u201D\u5F15\u7528\u4E86\u65E0\u6548\u7684\u6761\u4EF6\u5206\u652F`, { nodeId });
-          const key = `${ref.nodeId}:${ref.condition}`;
-          const consumer = this.branchConsumers.get(key);
-          if (consumer && consumer !== nodeId) fail("DUPLICATE_BRANCH_CONSUMER", `\u6761\u4EF6\u8282\u70B9\u201C${ref.nodeId}\u201D\u7684 ${ref.condition} \u5206\u652F\u5DF2\u8FDE\u63A5\u8282\u70B9\u201C${consumer}\u201D`, { nodeId });
-          this.branchConsumers.set(key, nodeId);
-          dependencies.set(ref.nodeId, ref.condition);
-          continue;
-        }
-        if (!isNodeRef(ref) || !this.nodes.some((node2) => node2.id === ref.nodeId)) fail("INVALID_DEPENDENCY", `\u8282\u70B9\u201C${nodeId}\u201D\u5F15\u7528\u4E86\u5176\u4ED6\u6D41\u7A0B\u6216\u5C1A\u672A\u521B\u5EFA\u7684\u4F9D\u8D56`, { nodeId });
-        if (this.nodes.find((node2) => node2.id === ref.nodeId)?.type === "CONDITION") fail("CONDITION_BRANCH_REQUIRED", `\u8282\u70B9\u201C${nodeId}\u201D\u5FC5\u987B\u901A\u8FC7 whenTrue() \u6216 whenFalse() \u8FDE\u63A5\u6761\u4EF6\u8282\u70B9`, { nodeId });
-        dependencies.set(ref.nodeId, dependencies.get(ref.nodeId));
-      }
-      if (!dependencies.size) dependencies.set("start", void 0);
-    } else if (!dependencies.size) dependencies.set(this.lastNodeId, void 0);
-    dependencies.delete(nodeId);
-    return [...dependencies].map(([from, condition]) => ({ from, condition }));
-  }
-  addNode(type, options, config, source, kind, details = {}) {
-    assertId(options.id, "Node");
-    if (options.id === "start" || this.nodes.some((node2) => node2.id === options.id)) fail("DUPLICATE_NODE", `\u8282\u70B9 ID \u201C${options.id}\u201D \u91CD\u590D`, { nodeId: options.id });
-    const dependencies = this.resolveDependencies(source, options.after, options.id);
-    const output = this.outputRef(options.id, options.output, kind);
-    const defaults = nodeDefaults(type);
-    this.nodes.push({
-      id: options.id,
-      title: options.title?.trim() || defaults.title,
-      type,
-      icon: defaults.icon,
-      x: options.position?.x ?? 0,
-      y: options.position?.y ?? 0,
-      tone: defaults.tone,
-      note: details.note ?? defaults.note,
-      outputVar: output.name,
-      config,
-      ...options.timeoutMs !== void 0 ? { timeoutMs: executionLimit(options.timeoutMs, 6e5, `\u8282\u70B9\u201C${options.id}\u201D\u7684 timeoutMs`) } : {},
-      ...details.workspace ? { workspace: details.workspace } : {}
-    });
-    if (options.position) this.explicitPositions.set(options.id, options.position);
-    for (const dependency of dependencies) {
-      const edge = createConnection(dependency.from, options.id, this.edges);
-      this.edges.push(dependency.condition ? { ...edge, label: dependency.condition, condition: dependency.condition } : edge);
-    }
-    this.lastNodeId = options.id;
-    return output;
   }
   input(options) {
     if (!options.fields.length) fail("INVALID_INPUT", `\u8F93\u5165\u8282\u70B9\u201C${options.id}\u201D\u81F3\u5C11\u9700\u8981\u4E00\u4E2A\u5B57\u6BB5`, { nodeId: options.id });
     const seen = /* @__PURE__ */ new Set();
     for (const field of options.fields) {
-      this.registerVariable(field.variable);
+      registerVariable(this.graph, field.variable);
       if (seen.has(field.variable.name)) fail("INVALID_INPUT", `\u8F93\u5165\u8282\u70B9\u201C${options.id}\u201D\u91CD\u590D\u4F7F\u7528\u53D8\u91CF\u201C${field.variable.name}\u201D`, { nodeId: options.id });
       seen.add(field.variable.name);
     }
-    const fields = options.fields.map((field, index) => ({
-      id: `field_${field.variable.name}_${index}`,
-      variable: field.variable.name,
-      label: field.label,
-      component: field.component ?? (field.variable.kind === "boolean" ? "checkbox" : "input"),
-      size: field.size ?? (field.variable.kind === "boolean" ? "small" : "large"),
-      ...field.placeholder !== void 0 ? { placeholder: field.placeholder } : {},
-      ...field.buttonValue !== void 0 ? { buttonValue: field.buttonValue } : {}
-    }));
-    const result = this.addNode("INPUT", options, { layout: options.layout ?? "single", fields }, [], "object", { note: [...seen].join(", ") });
-    for (const name of seen) this.variableProducers.set(name, options.id);
+    const fields = options.fields.map((field, index) => ({ id: `field_${field.variable.name}_${index}`, variable: field.variable.name, label: field.label, component: field.component ?? (field.variable.kind === "boolean" ? "checkbox" : "input"), size: field.size ?? (field.variable.kind === "boolean" ? "small" : "large"), ...field.placeholder !== void 0 ? { placeholder: field.placeholder } : {}, ...field.buttonValue !== void 0 ? { buttonValue: field.buttonValue } : {} }));
+    const result = addFlowNode(this.graph, "INPUT", options, { layout: options.layout ?? "single", fields }, [], "object", { note: [...seen].join(", ") });
+    for (const name of seen) this.graph.producers.set(name, options.id);
     return result;
   }
   skill(options) {
     if (!this.skillIds.has(options.skill.id)) fail("MISSING_SKILL", `\u8282\u70B9\u201C${options.id}\u201D\u4F7F\u7528\u4E86\u672A\u5728 App \u4E2D\u58F0\u660E\u7684 Skill \u201C${options.skill.id}\u201D`, { nodeId: options.id });
     const input = options.input ?? "{{user_input}}";
-    return this.addNode("SKILL", options, { skillId: options.skill.id, input: serializeValue(input) }, input, "markdown", { note: options.skill.id });
+    return addFlowNode(this.graph, "SKILL", options, { skillId: options.skill.id, input: serializeValue(input) }, input, "markdown", { note: options.skill.id });
   }
   workspace(options) {
     if (!this.skillIds.has(options.agent.id)) fail("MISSING_SKILL", `Workspace\u201C${options.id}\u201D\u7684\u603B Agent Skill \u672A\u5728 App \u4E2D\u58F0\u660E`, { nodeId: options.id });
@@ -695,84 +710,46 @@ var FlowBuilder = class {
     if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 10) fail("INVALID_WORKSPACE", `Workspace\u201C${options.id}\u201D\u7684 maxIterations \u5FC5\u987B\u4E3A 1\u201310`, { nodeId: options.id });
     const hooks = [...options.hooks ?? []];
     if (hooks.length > 16) fail("INVALID_WORKSPACE_HOOKS", `Workspace\u201C${options.id}\u201D\u6700\u591A\u58F0\u660E 16 \u4E2A Hook`, { nodeId: options.id });
-    const hookIds = /* @__PURE__ */ new Set();
+    const ids = /* @__PURE__ */ new Set();
     for (const hook of hooks) {
-      if (hookIds.has(hook.id)) fail("DUPLICATE_WORKSPACE_HOOK", `Workspace\u201C${options.id}\u201D\u91CD\u590D\u58F0\u660E Hook \u201C${hook.id}\u201D`, { nodeId: options.id });
-      hookIds.add(hook.id);
+      if (ids.has(hook.id)) fail("DUPLICATE_WORKSPACE_HOOK", `Workspace\u201C${options.id}\u201D\u91CD\u590D\u58F0\u660E Hook \u201C${hook.id}\u201D`, { nodeId: options.id });
+      ids.add(hook.id);
       const current = this.hookDefinitions.get(hook.id);
       if (current && current !== hook) fail("DUPLICATE_WORKSPACE_HOOK", `Hook ID \u201C${hook.id}\u201D\u5F15\u7528\u4E86\u4E0D\u540C\u5B9A\u4E49`, { nodeId: options.id });
       this.hookDefinitions.set(hook.id, hook);
     }
     const input = options.input ?? "{{user_input}}";
     const workspace = { agentSkillId: options.agent.id, skillIds: options.skills.map((skill) => skill.id), maxIterations };
-    return this.addNode("WORKSPACE", options, { ...workspace, input: serializeValue(input), ...hooks.length ? { hookIds: hooks.map((hook) => hook.id) } : {} }, input, "markdown", { workspace, note: `${options.agent.id} \xB7 ${options.skills.length} Skills` });
+    return addFlowNode(this.graph, "WORKSPACE", options, { ...workspace, input: serializeValue(input), ...hooks.length ? { hookIds: hooks.map((hook) => hook.id) } : {} }, input, "markdown", { workspace, note: `${options.agent.id} \xB7 ${options.skills.length} Skills` });
   }
   http(options) {
     const source = { url: options.url, headers: options.headers, body: options.body };
-    return this.addNode("HTTP", options, {
-      method: options.method ?? "GET",
-      url: serializeValue(options.url),
-      ...options.headers === void 0 ? {} : { headers: serializeValue(options.headers) },
-      ...options.body === void 0 ? {} : { body: serializeValue(options.body) }
-    }, source, "object");
+    return addFlowNode(this.graph, "HTTP", options, { method: options.method ?? "GET", url: serializeValue(options.url), ...options.headers === void 0 ? {} : { headers: serializeValue(options.headers) }, ...options.body === void 0 ? {} : { body: serializeValue(options.body) } }, source, "object");
   }
   condition(options) {
     const expression = String(serializeValue(options.expression));
     const error = validateExpression(expression);
     if (error) fail("INVALID_CONDITION", `\u6761\u4EF6\u8282\u70B9\u201C${options.id}\u201D\u8868\u8FBE\u5F0F\u65E0\u6548\uFF1A${error}`, { nodeId: options.id });
-    const output = this.addNode("CONDITION", options, { expression }, options.expression, "boolean");
-    const branch = (condition) => Object.freeze({
-      nodeId: output.nodeId,
-      condition,
-      [BRANCH_REF]: true
-    });
+    const output = addFlowNode(this.graph, "CONDITION", options, { expression }, options.expression, "boolean");
+    const branch = (condition) => Object.freeze({ nodeId: output.nodeId, condition, [BRANCH_REF]: true });
     return Object.freeze({ ...output, whenTrue: () => branch("true"), whenFalse: () => branch("false") });
   }
   code(options) {
     const current = this.codeDefinitions.get(options.code.id);
     if (current && current !== options.code) fail("DUPLICATE_CODE", `Code ID \u201C${options.code.id}\u201D\u5F15\u7528\u4E86\u4E0D\u540C\u5B9A\u4E49`, { path: options.code.id });
     this.codeDefinitions.set(options.code.id, options.code);
-    return this.addNode("CODE", options, { codeId: options.code.id, input: serializeValue(options.input) }, options.input, outputKindForCode(options.code.outputSchema), { note: options.code.id });
+    return addFlowNode(this.graph, "CODE", options, { codeId: options.code.id, input: serializeValue(options.input) }, options.input, outputKindForCode(options.code.outputSchema), { note: options.code.id });
   }
   contact(options) {
     const source = { title: options.title, body: options.body, dedupeKey: options.dedupeKey };
-    return this.addNode("CONTACT", options, {
-      title: serializeValue(options.title),
-      body: serializeValue(options.body),
-      severity: options.severity ?? "info",
-      webhook: options.webhook === true,
-      ...options.dedupeKey === void 0 ? {} : { dedupeKey: serializeValue(options.dedupeKey) }
-    }, source, "object");
+    return addFlowNode(this.graph, "CONTACT", options, { title: serializeValue(options.title), body: serializeValue(options.body), severity: options.severity ?? "info", webhook: options.webhook === true, ...options.dedupeKey === void 0 ? {} : { dedupeKey: serializeValue(options.dedupeKey) } }, source, "object");
   }
   output(options) {
     const value = options.value ?? template`{{previous.output}}`;
-    return this.addNode("OUTPUT", options, { template: serializeValue(value) }, value, inferredKind(value));
+    return addFlowNode(this.graph, "OUTPUT", options, { template: serializeValue(value) }, value, inferredKind(value));
   }
   finish(name, skills, visualizations, interaction, identity, execution) {
-    const layout = autoLayoutNodes(this.nodes, this.edges).map((node2) => {
-      const position = this.explicitPositions.get(node2.id);
-      return position ? { ...node2, ...position } : node2;
-    });
-    return {
-      name,
-      ...identity?.id ? { appId: identity.id } : {},
-      ...identity?.version ? { appVersion: identity.version } : {},
-      ...interaction ? { interaction } : {},
-      ...identity?.background ? { background: identity.background } : {},
-      ...execution ? { execution } : {},
-      nodes: layout,
-      edges: this.edges,
-      skills: skills.map((skill) => ({
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        category: skill.category,
-        prompt: isTemplate(skill.prompt) ? skill.prompt.text : skill.prompt,
-        pluginIds: skill.plugins.map((plugin2) => plugin2.id)
-      })),
-      variables: [...this.variables.values()].map((ref) => ({ name: ref.name, type: ref.kind, defaultValue: encodeDefault(ref) })),
-      visualizations: [...visualizations]
-    };
+    return finishFlow(this.graph, name, skills, visualizations, interaction, identity, execution);
   }
   codes() {
     return [...this.codeDefinitions.values()];
@@ -781,6 +758,60 @@ var FlowBuilder = class {
     return [...this.hookDefinitions.values()];
   }
 };
+
+// src/interaction.ts
+function assertIntegerRange(value, minimum, maximum, path) {
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    fail("INVALID_INTERACTION", `${path} \u5FC5\u987B\u4E3A ${minimum}\u2013${maximum}`);
+  }
+}
+function normalizeConversation(value) {
+  if (!value) return void 0;
+  const history = value.history === true;
+  const historyWindow = value.historyWindow ?? 20;
+  assertIntegerRange(historyWindow, 1, 100, "conversation.historyWindow");
+  return { multiTurn: history || value.multiTurn === true, history, historyWindow };
+}
+function normalizeKnowledge(value, history) {
+  if (!value) return void 0;
+  const knowledge = {
+    enabled: true,
+    scopes: [...value.scopes ?? ["app"]],
+    topK: value.topK ?? 6,
+    chunkSize: value.chunkSize ?? 1200,
+    chunkOverlap: value.chunkOverlap ?? 200
+  };
+  assertIntegerRange(knowledge.topK, 1, 20, "knowledge.topK");
+  assertIntegerRange(knowledge.chunkSize, 200, 8e3, "knowledge.chunkSize");
+  assertIntegerRange(knowledge.chunkOverlap, 0, 2e3, "knowledge.chunkOverlap");
+  if (knowledge.scopes?.includes("session") && !history) {
+    fail("SESSION_KNOWLEDGE_REQUIRES_HISTORY", "\u4F1A\u8BDD\u7EA7\u77E5\u8BC6\u5E93\u8981\u6C42 conversation.history=true");
+  }
+  if (knowledge.chunkOverlap >= knowledge.chunkSize) {
+    fail("INVALID_INTERACTION", "knowledge.chunkOverlap \u5FC5\u987B\u5C0F\u4E8E chunkSize");
+  }
+  return knowledge;
+}
+function normalizeStreaming(value) {
+  if (!value) return void 0;
+  if (value.defaultMode !== "text" && value.defaultMode !== "events") {
+    fail("INVALID_INTERACTION", "streaming.defaultMode \u5FC5\u987B\u4E3A text \u6216 events");
+  }
+  return { defaultMode: value.defaultMode };
+}
+function normalizeInteraction(value) {
+  if (!value) return void 0;
+  const conversation = normalizeConversation(value.conversation);
+  const knowledge = normalizeKnowledge(value.knowledge, conversation?.history === true);
+  const streaming = normalizeStreaming(value.streaming);
+  return {
+    ...conversation ? { conversation } : {},
+    ...knowledge ? { knowledge } : {},
+    ...streaming ? { streaming } : {}
+  };
+}
+
+// src/app-definition.ts
 function uniqueById(values, subject) {
   const seen = /* @__PURE__ */ new Set();
   for (const value of values) {
@@ -788,60 +819,6 @@ function uniqueById(values, subject) {
     if (seen.has(value.id)) fail(`DUPLICATE_${subject.toUpperCase()}`, `${subject} ID \u201C${value.id}\u201D \u91CD\u590D`, { path: value.id });
     seen.add(value.id);
   }
-}
-function defineApp(options, build2) {
-  if (!options.name.trim()) fail("INVALID_APP", "App \u540D\u79F0\u4E0D\u80FD\u4E3A\u7A7A");
-  const background = normalizeBackground(options.background, options.id, options.version);
-  for (const ref of options.variables ?? []) if (RESERVED_VARIABLES.has(ref.name)) fail("RESERVED_VARIABLE", `\u53D8\u91CF\u201C${ref.name}\u201D\u7531 runtime \u4FDD\u7559\uFF0C\u4E0D\u80FD\u81EA\u884C\u58F0\u660E`, { path: ref.name });
-  const interaction = normalizeInteraction(options.interaction);
-  const execution = options.timeoutMs !== void 0 || options.maxConcurrency !== void 0 ? {
-    ...options.timeoutMs !== void 0 ? { timeoutMs: executionLimit(options.timeoutMs, 6e5, "App timeoutMs") } : {},
-    ...options.maxConcurrency !== void 0 ? { maxConcurrency: executionLimit(options.maxConcurrency, 32, "App maxConcurrency") } : {}
-  } : void 0;
-  const skills = [...options.skills ?? []];
-  uniqueById(skills, "skill");
-  const flowHooks = [...options.hooks ?? []];
-  const flowHookIds = /* @__PURE__ */ new Set();
-  for (const hook of flowHooks) {
-    assertId(hook.id, "Flow Hook");
-    if (flowHookIds.has(hook.id)) fail("DUPLICATE_FLOW_HOOK", `Flow Hook ID \u201C${hook.id}\u201D\u91CD\u590D`, { path: hook.id });
-    flowHookIds.add(hook.id);
-  }
-  if (flowHooks.length > 16) fail("INVALID_FLOW_HOOKS", "App \u6700\u591A\u58F0\u660E 16 \u4E2A Flow Hook");
-  const configuredPlugins = [...options.plugins ?? []];
-  const inferredPlugins = skills.flatMap((skill) => [...skill.plugins]);
-  const pluginsById = /* @__PURE__ */ new Map();
-  for (const plugin2 of [...configuredPlugins, ...inferredPlugins]) {
-    const current = pluginsById.get(plugin2.id);
-    if (current && current !== plugin2) fail("DUPLICATE_PLUGIN", `Plugin ID \u201C${plugin2.id}\u201D\u5F15\u7528\u4E86\u4E0D\u540C\u5B9A\u4E49`, { path: plugin2.id });
-    pluginsById.set(plugin2.id, plugin2);
-  }
-  const runtimeVariables = interaction ? [
-    variable.string("session_id"),
-    variable.array("conversation_history"),
-    variable.markdown("knowledge_context")
-  ] : [];
-  if (background) runtimeVariables.push(
-    variable.object("background_trigger", { type: "manual" }),
-    variable.string("gateway_run_id")
-  );
-  const flow2 = new FlowBuilder([...options.variables ?? [], ...runtimeVariables], skills);
-  const result = build2({ flow: flow2 });
-  if (result && typeof result.then === "function") {
-    fail("ASYNC_BUILDER_UNSUPPORTED", "defineApp() \u7684\u6D41\u7A0B Builder \u5FC5\u987B\u540C\u6B65\u6267\u884C\uFF1B\u5F02\u6B65\u5DE5\u4F5C\u5E94\u653E\u5728\u6784\u5EFA\u811A\u672C\u8C03\u7528 writeAi() \u4E4B\u524D");
-  }
-  const prepared = {
-    project: {
-      ...flow2.finish(options.name, skills, options.visualizations ?? [], interaction, { id: options.id, version: options.version, background }, execution),
-      ...flowHooks.length ? { flowHookIds: flowHooks.map((hook) => hook.id) } : {}
-    },
-    plugins: [...pluginsById.values()],
-    codes: flow2.codes(),
-    hooks: flow2.hooks(),
-    flowHooks
-  };
-  validateBackgroundFlow(prepared.project, background);
-  return Object.freeze({ id: options.id, version: options.version, name: options.name, prepared, [APP]: true });
 }
 function executionLimit(value, maximum, subject) {
   if (!Number.isInteger(value) || value < 1 || value > maximum) fail("INVALID_EXECUTION_LIMIT", `${subject} \u5FC5\u987B\u4E3A 1\u2013${maximum} \u7684\u6574\u6570`);
@@ -872,9 +849,10 @@ function normalizeBackground(value, appId, version) {
     ids.add(id);
   };
   const heartbeat = value.heartbeat ? (() => {
-    register(value.heartbeat.id);
-    if (!Number.isInteger(value.heartbeat.everyMs) || value.heartbeat.everyMs < 6e4 || value.heartbeat.everyMs > 864e5) fail("INVALID_HEARTBEAT", "heartbeat.everyMs \u5FC5\u987B\u4E3A 60000\u201386400000");
-    return { id: value.heartbeat.id, everyMs: value.heartbeat.everyMs, input: value.heartbeat.input, variables: jsonClone(value.heartbeat.variables, "heartbeat.variables"), runOnStart: value.heartbeat.runOnStart === true };
+    const trigger = value.heartbeat;
+    register(trigger.id);
+    if (!Number.isInteger(trigger.everyMs) || trigger.everyMs < 6e4 || trigger.everyMs > 864e5) fail("INVALID_HEARTBEAT", "heartbeat.everyMs \u5FC5\u987B\u4E3A 60000\u201386400000");
+    return { id: trigger.id, everyMs: trigger.everyMs, input: trigger.input, variables: jsonClone(trigger.variables, "heartbeat.variables"), runOnStart: trigger.runOnStart === true };
   })() : void 0;
   if ((value.cron?.length ?? 0) > 64) fail("INVALID_CRON", "background.cron \u6700\u591A\u5305\u542B 64 \u4E2A\u89E6\u53D1\u5668");
   const cron = (value.cron ?? []).map((trigger) => {
@@ -896,7 +874,7 @@ function validateBackgroundFlow(project, background) {
   const contacts = project.nodes.filter((node2) => node2.type === "CONTACT");
   if (contacts.length && !background) fail("CONTACT_REQUIRES_BACKGROUND", "flow.contact() \u8981\u6C42 defineApp() \u58F0\u660E background", { nodeId: contacts[0].id });
   if (!background) return;
-  const definitions = new Map(project.variables.map((variable2) => [variable2.name, variable2]));
+  const definitions = new Map(project.variables.map((item) => [item.name, item]));
   const triggers = [...background.heartbeat ? [background.heartbeat] : [], ...background.cron ?? []];
   for (const node2 of project.nodes.filter((item) => item.type === "INPUT")) {
     const fields = Array.isArray(node2.config?.fields) ? node2.config.fields : [];
@@ -909,30 +887,54 @@ function validateBackgroundFlow(project, background) {
     }
   }
 }
-function normalizeInteraction(value) {
-  if (!value) return void 0;
-  const history = value.conversation?.history === true;
-  const conversation = value.conversation ? {
-    multiTurn: history || value.conversation.multiTurn === true,
-    history,
-    historyWindow: value.conversation.historyWindow ?? 20
-  } : void 0;
-  const knowledge = value.knowledge ? {
-    enabled: true,
-    scopes: [...value.knowledge.scopes ?? ["app"]],
-    topK: value.knowledge.topK ?? 6,
-    chunkSize: value.knowledge.chunkSize ?? 1200,
-    chunkOverlap: value.knowledge.chunkOverlap ?? 200
-  } : void 0;
-  const streaming = value.streaming ? { defaultMode: value.streaming.defaultMode } : void 0;
-  if (conversation && (!Number.isInteger(conversation.historyWindow) || conversation.historyWindow < 1 || conversation.historyWindow > 100)) fail("INVALID_INTERACTION", "conversation.historyWindow \u5FC5\u987B\u4E3A 1\u2013100");
-  if (knowledge && (!Number.isInteger(knowledge.topK) || knowledge.topK < 1 || knowledge.topK > 20)) fail("INVALID_INTERACTION", "knowledge.topK \u5FC5\u987B\u4E3A 1\u201320");
-  if (knowledge && (!Number.isInteger(knowledge.chunkSize) || knowledge.chunkSize < 200 || knowledge.chunkSize > 8e3)) fail("INVALID_INTERACTION", "knowledge.chunkSize \u5FC5\u987B\u4E3A 200\u20138000");
-  if (knowledge && (!Number.isInteger(knowledge.chunkOverlap) || knowledge.chunkOverlap < 0 || knowledge.chunkOverlap > 2e3)) fail("INVALID_INTERACTION", "knowledge.chunkOverlap \u5FC5\u987B\u4E3A 0\u20132000");
-  if (knowledge?.scopes.includes("session") && !history) fail("SESSION_KNOWLEDGE_REQUIRES_HISTORY", "\u4F1A\u8BDD\u7EA7\u77E5\u8BC6\u5E93\u8981\u6C42 conversation.history=true");
-  if (knowledge && knowledge.chunkOverlap >= knowledge.chunkSize) fail("INVALID_INTERACTION", "knowledge.chunkOverlap \u5FC5\u987B\u5C0F\u4E8E chunkSize");
-  if (streaming && streaming.defaultMode !== "text" && streaming.defaultMode !== "events") fail("INVALID_INTERACTION", "streaming.defaultMode \u5FC5\u987B\u4E3A text \u6216 events");
-  return { ...conversation ? { conversation } : {}, ...knowledge ? { knowledge } : {}, ...streaming ? { streaming } : {} };
+function appExecution(options) {
+  return options.timeoutMs !== void 0 || options.maxConcurrency !== void 0 ? { ...options.timeoutMs !== void 0 ? { timeoutMs: executionLimit(options.timeoutMs, 6e5, "App timeoutMs") } : {}, ...options.maxConcurrency !== void 0 ? { maxConcurrency: executionLimit(options.maxConcurrency, 32, "App maxConcurrency") } : {} } : void 0;
+}
+function appSkills(options) {
+  const skills = [...options.skills ?? []];
+  uniqueById(skills, "skill");
+  return skills;
+}
+function appFlowHooks(options) {
+  const hooks = [...options.hooks ?? []];
+  const ids = /* @__PURE__ */ new Set();
+  for (const hook of hooks) {
+    assertId(hook.id, "Flow Hook");
+    if (ids.has(hook.id)) fail("DUPLICATE_FLOW_HOOK", `Flow Hook ID \u201C${hook.id}\u201D\u91CD\u590D`, { path: hook.id });
+    ids.add(hook.id);
+  }
+  if (hooks.length > 16) fail("INVALID_FLOW_HOOKS", "App \u6700\u591A\u58F0\u660E 16 \u4E2A Flow Hook");
+  return hooks;
+}
+function appPlugins(options, skills) {
+  const values = /* @__PURE__ */ new Map();
+  for (const plugin2 of [...options.plugins ?? [], ...skills.flatMap((skill) => [...skill.plugins])]) {
+    const current = values.get(plugin2.id);
+    if (current && current !== plugin2) fail("DUPLICATE_PLUGIN", `Plugin ID \u201C${plugin2.id}\u201D\u5F15\u7528\u4E86\u4E0D\u540C\u5B9A\u4E49`, { path: plugin2.id });
+    values.set(plugin2.id, plugin2);
+  }
+  return [...values.values()];
+}
+function runtimeVariables(interaction, background) {
+  const values = interaction ? [variable.string("session_id"), variable.array("conversation_history"), variable.markdown("knowledge_context")] : [];
+  if (background) values.push(variable.object("background_trigger", { type: "manual" }), variable.string("gateway_run_id"));
+  return values;
+}
+function defineApp(options, build2) {
+  if (!options.name.trim()) fail("INVALID_APP", "App \u540D\u79F0\u4E0D\u80FD\u4E3A\u7A7A");
+  const background = normalizeBackground(options.background, options.id, options.version);
+  for (const ref of options.variables ?? []) if (RESERVED_VARIABLES.has(ref.name)) fail("RESERVED_VARIABLE", `\u53D8\u91CF\u201C${ref.name}\u201D\u7531 runtime \u4FDD\u7559\uFF0C\u4E0D\u80FD\u81EA\u884C\u58F0\u660E`, { path: ref.name });
+  const interaction = normalizeInteraction(options.interaction);
+  const execution = appExecution(options);
+  const skills = appSkills(options);
+  const flowHooks = appFlowHooks(options);
+  const plugins = appPlugins(options, skills);
+  const flow2 = new FlowBuilder([...options.variables ?? [], ...runtimeVariables(interaction, background)], skills);
+  const result = build2({ flow: flow2 });
+  if (result && typeof result.then === "function") fail("ASYNC_BUILDER_UNSUPPORTED", "defineApp() \u7684\u6D41\u7A0B Builder \u5FC5\u987B\u540C\u6B65\u6267\u884C\uFF1B\u5F02\u6B65\u5DE5\u4F5C\u5E94\u653E\u5728\u6784\u5EFA\u811A\u672C\u8C03\u7528 writeAi() \u4E4B\u524D");
+  const prepared = { project: { ...flow2.finish(options.name, skills, options.visualizations ?? [], interaction, { id: options.id, version: options.version, background }, execution), ...flowHooks.length ? { flowHookIds: flowHooks.map((hook) => hook.id) } : {} }, plugins, codes: flow2.codes(), hooks: flow2.hooks(), flowHooks };
+  validateBackgroundFlow(prepared.project, background);
+  return Object.freeze({ id: options.id, version: options.version, name: options.name, prepared, [APP]: true });
 }
 function preparedApp(app) {
   if (!app || typeof app !== "object" || !(APP in app)) fail("INVALID_APP", "\u9700\u8981\u7531 defineApp() \u521B\u5EFA\u7684 AppDefinition");

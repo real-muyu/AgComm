@@ -1,15 +1,15 @@
 import {
   AiRuntimeError,
   BACKGROUND_RUN,
-  createRuntime,
+  createRuntimeKernel,
   createSafeOutboundFetch,
   validateResolvedPublicUrl
-} from "./chunks/chunk-WIOXNCD7-bundle.js";
+} from "./chunks/chunk-V5FW7JF6-bundle.js";
 import "./chunks/chunk-MZWYF3I5-bundle.js";
 
 // src/gateway-host.ts
 async function inspectGatewayPackage(pathOrBytes, runtimeOptions = {}) {
-  const runtime = createRuntime(runtimeOptions);
+  const runtime = createRuntimeKernel(runtimeOptions);
   const opened = await runtime.openAiApp(pathOrBytes);
   try {
     await opened.preflight();
@@ -32,7 +32,7 @@ async function inspectGatewayPackage(pathOrBytes, runtimeOptions = {}) {
   }
 }
 async function executeGatewayTrigger(pathOrBytes, runtimeOptions, runOptions, services) {
-  const runtime = createRuntime(runtimeOptions);
+  const runtime = createRuntimeKernel(runtimeOptions);
   const opened = await runtime.openAiApp(pathOrBytes);
   try {
     return await opened[BACKGROUND_RUN](runOptions, services);

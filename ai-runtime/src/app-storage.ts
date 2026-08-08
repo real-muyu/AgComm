@@ -1,93 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  chmod, copyFile, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile,
+  copyFile, mkdir, readFile, readdir, rename, rm, writeFile,
 } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { AiRuntimeError } from "./errors.ts";
-
-const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
-const MAX_SOURCES = 200;
-const MAX_CHUNKS = 20_000;
-const LOCK_STALE_MS = 30_000;
-
-export type ConversationMessage = {
-  role: "user" | "assistant";
-  content: string;
-  createdAt: string;
-};
-
-export type SessionTurn = {
-  id: string;
-  input: string;
-  status: "completed" | "failed";
-  output?: unknown;
-  error?: string;
-  elapsedMs?: number;
-  createdAt: string;
-};
-
-export type SessionRecord = {
-  version: 1;
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: ConversationMessage[];
-  turns: SessionTurn[];
-};
-
-export type SessionSummary = Pick<SessionRecord, "id" | "title" | "createdAt" | "updatedAt"> & {
-  messageCount: number;
-};
-
-export type KnowledgeScope = { type: "app" } | { type: "session"; sessionId: string };
-
-export type KnowledgeDocumentParser = {
-  id: string;
-  version: string;
-  extensions: readonly string[];
-  parse(input: { path: string; bytes: Uint8Array; signal: AbortSignal }): Promise<string | readonly string[]>;
-};
-
-export type EmbeddingProvider = {
-  model: string;
-  embed(input: { texts: readonly string[]; signal: AbortSignal }): Promise<readonly (readonly number[])[]>;
-};
-
-export type KnowledgeDocument = {
-  id: string;
-  name: string;
-  sourceHash: string;
-  parserId: string;
-  parserVersion: string;
-  byteLength: number;
-  chunkCount: number;
-  status: "ready" | "failed";
-  error?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type KnowledgeMatch = {
-  sourceId: string;
-  sourceName: string;
-  chunkId: string;
-  text: string;
-  score: number;
-  scope: KnowledgeScope;
-};
-
-export type KnowledgeProgress = {
-  phase: "copy" | "parse" | "chunk" | "embed" | "complete" | "failed";
-  path: string;
-  name: string;
-  fileIndex: number;
-  fileCount: number;
-  completed?: number;
-  total?: number;
-  message?: string;
-};
+import { importKnowledgeSources } from "./knowledge/KnowledgeSourceImporter.ts";
+import { withLocalFileLock } from "./storage/LocalFileLock.ts";
+import { enforcePrivateMode } from "./storage/FilePermissions.ts";
+import type { EmbeddingProvider, KnowledgeDocument, KnowledgeDocumentParser, KnowledgeMatch, KnowledgeProgress, KnowledgeScope, SessionRecord, SessionSummary } from "./storage-contracts.ts";
+export type { ConversationMessage, EmbeddingProvider, KnowledgeDocument, KnowledgeDocumentParser, KnowledgeMatch, KnowledgeProgress, KnowledgeScope, SessionRecord, SessionSummary, SessionTurn } from "./storage-contracts.ts";
 
 type IndexChunk = {
   id: string;
@@ -121,25 +43,6 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
     throw new AiRuntimeError("LOCAL_DATA_CORRUPT", `Local runtime data is invalid: ${path}`, { cause: error });
   }
-}
-
-async function withLock<T>(directory: string, task: () => Promise<T>): Promise<T> {
-  const path = join(directory, ".lock");
-  for (let attempt = 0; attempt < 100; attempt++) {
-    try {
-      const handle = await open(path, "wx", 0o600);
-      try { await handle.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() })); return await task(); }
-      finally { await handle.close(); await rm(path, { force: true }); }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      try {
-        const info = await stat(path);
-        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) { await rm(path, { force: true }); continue; }
-      } catch { continue; }
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
-    }
-  }
-  throw new AiRuntimeError("LOCAL_DATA_LOCKED", "Local runtime data is locked by another process");
 }
 
 function defaultDataRoot() {
@@ -187,7 +90,7 @@ export class LocalAppStore {
   async initialize() {
     await mkdir(join(this.root, "sessions"), { recursive: true, mode: 0o700 });
     await mkdir(join(this.root, "knowledge"), { recursive: true, mode: 0o700 });
-    try { await chmod(this.root, 0o700); } catch { /* Windows and restricted filesystems may ignore modes. */ }
+    await enforcePrivateMode(this.root, 0o700, "APP_STORAGE_PERMISSIONS");
     await atomicWrite(join(this.root, "app.json"), JSON.stringify({ version: 1, appId: this.appId }, null, 2));
     await this.scanKnowledge();
   }
@@ -241,7 +144,7 @@ export class LocalAppStore {
   }
 
   async writeSession(session: SessionRecord) {
-    await withLock(this.root, () => atomicWrite(this.sessionPath(session.id), JSON.stringify(session, null, 2)));
+    await withLocalFileLock(this.root, () => atomicWrite(this.sessionPath(session.id), JSON.stringify(session, null, 2)));
   }
 
   async renameSession(id: string, title: string) {
@@ -253,7 +156,7 @@ export class LocalAppStore {
   }
 
   async deleteSession(id: string) {
-    await withLock(this.root, async () => {
+    await withLocalFileLock(this.root, async () => {
       await rm(this.sessionPath(id), { force: true });
       await rm(join(this.root, "knowledge", `session-${safeSessionId(id)}`), { recursive: true, force: true });
     });
@@ -271,11 +174,6 @@ export class LocalAppStore {
   }
 
   async listKnowledge(scope: KnowledgeScope) { return (await this.documents(scope)).values; }
-
-  private parserFor(path: string) {
-    const extension = extname(path).toLowerCase();
-    return this.parsers.find((parser) => parser.extensions.some((item) => item.toLowerCase() === extension));
-  }
 
   private async readIndex(directory: string) {
     const metadata = await readJson<IndexMetadata>(join(directory, "index.json"), { version: 1, model: "", dimensions: 0, chunks: [] });
@@ -303,72 +201,7 @@ export class LocalAppStore {
     onProgress?: (progress: KnowledgeProgress) => void,
   ) {
     const { directory, values } = await this.documents(scope);
-    const results: KnowledgeDocument[] = [];
-    for (const [fileIndex, requestedPath] of paths.entries()) {
-      if (signal.aborted) throw signal.reason;
-      let sourcePath: string;
-      try { sourcePath = await realpath(resolve(requestedPath)); }
-      catch (error) { throw new AiRuntimeError("KNOWLEDGE_SOURCE_INVALID", `Knowledge source cannot be opened: ${requestedPath}`, { cause: error }); }
-      const info = await stat(sourcePath);
-      if (!info.isFile()) throw new AiRuntimeError("KNOWLEDGE_SOURCE_INVALID", `Knowledge source is not a file: ${requestedPath}`);
-      if (info.size > MAX_SOURCE_BYTES) throw new AiRuntimeError("KNOWLEDGE_SOURCE_TOO_LARGE", `Knowledge source exceeds ${MAX_SOURCE_BYTES} bytes`);
-      const parser = this.parserFor(sourcePath);
-      if (!parser) throw new AiRuntimeError("KNOWLEDGE_PARSER_NOT_FOUND", `No knowledge parser is registered for ${extname(sourcePath) || "this file"}`);
-      const bytes = new Uint8Array(await readFile(sourcePath));
-      const sourceHash = hashBytes(bytes);
-      const duplicate = values.find((item) => item.sourceHash === sourceHash && item.status === "ready");
-      if (duplicate) { results.push(duplicate); continue; }
-      if (values.length >= MAX_SOURCES) throw new AiRuntimeError("KNOWLEDGE_SOURCE_LIMIT", `Knowledge scope cannot contain more than ${MAX_SOURCES} sources`);
-      const id = randomUUID();
-      const now = new Date().toISOString();
-      const document: KnowledgeDocument = { id, name: basename(sourcePath), sourceHash, parserId: parser.id, parserVersion: parser.version, byteLength: bytes.byteLength, chunkCount: 0, status: "failed", createdAt: now, updatedAt: now };
-      values.push(document);
-      const storedPath = join(directory, "sources", `${id}${extname(sourcePath).toLowerCase()}`);
-      onProgress?.({ phase: "copy", path: sourcePath, name: document.name, fileIndex, fileCount: paths.length });
-      await copyFile(sourcePath, storedPath);
-      try {
-        onProgress?.({ phase: "parse", path: sourcePath, name: document.name, fileIndex, fileCount: paths.length });
-        const parsed = await parser.parse({ path: sourcePath, bytes, signal });
-        const segments = (Array.isArray(parsed) ? parsed : [parsed]).map(String).filter((item) => item.trim());
-        const chunks: string[] = [];
-        const step = config.chunkSize - config.chunkOverlap;
-        for (const segment of segments) for (let offset = 0; offset < segment.length; offset += step) chunks.push(segment.slice(offset, offset + config.chunkSize));
-        onProgress?.({ phase: "chunk", path: sourcePath, name: document.name, fileIndex, fileCount: paths.length, completed: chunks.length, total: chunks.length });
-        if (!provider) throw new AiRuntimeError("EMBEDDING_PROVIDER_REQUIRED", "An embedding provider is required to index knowledge files");
-        const current = await this.readIndex(directory);
-        if (current.metadata.chunks.length + chunks.length > MAX_CHUNKS) throw new AiRuntimeError("KNOWLEDGE_CHUNK_LIMIT", `Knowledge scope cannot contain more than ${MAX_CHUNKS} chunks`);
-        const embedded: number[][] = [];
-        for (let offset = 0; offset < chunks.length; offset += 32) {
-          embedded.push(...(await provider.embed({ texts: chunks.slice(offset, offset + 32), signal })).map((vector) => [...vector]));
-          onProgress?.({ phase: "embed", path: sourcePath, name: document.name, fileIndex, fileCount: paths.length, completed: Math.min(chunks.length, offset + 32), total: chunks.length });
-        }
-        const dimensions = embedded[0]?.length ?? current.metadata.dimensions;
-        if (!dimensions || embedded.some((vector) => vector.length !== dimensions || vector.some((value) => !Number.isFinite(value)))) throw new AiRuntimeError("KNOWLEDGE_INDEX_FAILED", "Embedding provider returned invalid vectors");
-        const keepExisting = current.metadata.model === provider.model && (!current.metadata.dimensions || current.metadata.dimensions === dimensions);
-        if (current.metadata.chunks.length && !keepExisting) throw new AiRuntimeError("KNOWLEDGE_INDEX_STALE", "Embedding model changed; remove or reindex existing knowledge first");
-        const vectors = new Float32Array(current.vectors.length + embedded.length * dimensions);
-        vectors.set(current.vectors);
-        const indexChunks = [...current.metadata.chunks];
-        let vectorOffset = current.vectors.length;
-        embedded.forEach((vector, index) => {
-          vectors.set(vector, vectorOffset);
-          indexChunks.push({ id: `${id}-${index}`, sourceId: id, sourceName: document.name, text: chunks[index], vectorOffset, vectorLength: dimensions });
-          vectorOffset += dimensions;
-        });
-        await this.writeIndex(directory, { version: 1, model: provider.model, dimensions, chunks: indexChunks }, vectors);
-        Object.assign(document, { chunkCount: chunks.length, status: "ready" as const, error: undefined, updatedAt: new Date().toISOString() });
-        onProgress?.({ phase: "complete", path: sourcePath, name: document.name, fileIndex, fileCount: paths.length, completed: chunks.length, total: chunks.length });
-      } catch (error) {
-        document.error = error instanceof Error ? error.message : String(error);
-        onProgress?.({ phase: "failed", path: sourcePath, name: document.name, fileIndex, fileCount: paths.length, message: document.error });
-        await atomicWrite(join(directory, "sources.json"), JSON.stringify(values, null, 2));
-        if (error instanceof AiRuntimeError) throw error;
-        throw new AiRuntimeError("KNOWLEDGE_INDEX_FAILED", `Knowledge source could not be indexed: ${document.name}`, { cause: error });
-      }
-      await atomicWrite(join(directory, "sources.json"), JSON.stringify(values, null, 2));
-      results.push(document);
-    }
-    return results;
+    return importKnowledgeSources({ directory, values, parsers: this.parsers, readIndex: () => this.readIndex(directory), writeIndex: (metadata, vectors) => this.writeIndex(directory, metadata, vectors), saveDocuments: () => atomicWrite(join(directory, "sources.json"), JSON.stringify(values, null, 2)) }, paths, provider, config, signal, onProgress);
   }
 
   async removeKnowledge(ids: readonly string[], scope: KnowledgeScope) {

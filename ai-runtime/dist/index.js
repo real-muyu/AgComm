@@ -7,7 +7,7 @@ import {
   createNativePermissionAdapter,
   createOpenAiEmbeddingProvider,
   createPersistentTrustProvider,
-  createRuntime,
+  createRuntimeKernel,
   createSystemCredentialStore,
   createTerminalRenderer,
   promptTerminalTrust,
@@ -18,7 +18,7 @@ import {
   runTerminalSettings,
   selectTerminalPermissionPath,
   streamAiFile
-} from "./chunks/chunk-WIOXNCD7-bundle.js";
+} from "./chunks/chunk-V5FW7JF6-bundle.js";
 import "./chunks/chunk-MZWYF3I5-bundle.js";
 export {
   AiRuntimeError,
@@ -29,7 +29,8 @@ export {
   createNativePermissionAdapter,
   createOpenAiEmbeddingProvider,
   createPersistentTrustProvider,
-  createRuntime,
+  createRuntimeKernel as createRuntime,
+  createRuntimeKernel,
   createSystemCredentialStore,
   createTerminalRenderer,
   promptTerminalTrust,

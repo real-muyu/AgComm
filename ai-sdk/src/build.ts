@@ -11,7 +11,8 @@ import type { CodeDefinition } from "./code.ts";
 import type { WorkspaceHookDefinition } from "./hook.ts";
 import type { FlowHookDefinition } from "./flow-hook.ts";
 import type { PortablePluginDefinition } from "./plugin.ts";
-import { AiSdkError, preparedApp, type AiSdkIssue, type AppDefinition } from "./model.ts";
+import { preparedApp } from "./app-definition.ts";
+import { AiSdkError, type AiSdkIssue, type AppDefinition } from "./model-types.ts";
 
 declare const __AI_SDK_VERSION__: string;
 const SDK_VERSION = __AI_SDK_VERSION__;

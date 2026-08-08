@@ -20,7 +20,7 @@ function validateBundleDefinition(definition, subject) {
   return permissions;
 }
 
-// src/code.ts
+// src/code-schema.ts
 var ALLOWED_SCHEMA_KEYS = /* @__PURE__ */ new Set([
   "type",
   "properties",
@@ -58,46 +58,79 @@ function assertJsonValue(value, path, depth = 0) {
   }
   schemaError(path, "value must be JSON serializable");
 }
-function assertCodeSchema(schema, path) {
+function assertSchemaObject(schema, path) {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) schemaError(path, "schema must be an object");
-  for (const key of Object.keys(schema)) if (!ALLOWED_SCHEMA_KEYS.has(key)) schemaError(path, `unsupported keyword ${key}`);
+  for (const key of Object.keys(schema)) {
+    if (!ALLOWED_SCHEMA_KEYS.has(key)) schemaError(path, `unsupported keyword ${key}`);
+  }
+}
+function schemaTypes(schema, path) {
   const types = Array.isArray(schema.type) ? schema.type : schema.type === void 0 ? [] : [schema.type];
-  if (!types.length || types.some((type) => typeof type !== "string" || !JSON_TYPES.has(type))) schemaError(`${path}.type`, "must declare supported JSON type(s)");
+  if (!types.length || types.some((type) => typeof type !== "string" || !JSON_TYPES.has(type))) {
+    schemaError(`${path}.type`, "must declare supported JSON type(s)");
+  }
   if (new Set(types).size !== types.length) schemaError(`${path}.type`, "must not contain duplicates");
+  return types;
+}
+function assertValueConstraints(schema, path) {
   if (schema.enum !== void 0) {
     if (!Array.isArray(schema.enum) || !schema.enum.length) schemaError(`${path}.enum`, "must be a non-empty array");
     assertJsonValue(schema.enum, `${path}.enum`);
   }
   if (Object.hasOwn(schema, "const")) assertJsonValue(schema.const, `${path}.const`);
-  if (schema.pattern !== void 0) {
-    if (typeof schema.pattern !== "string") schemaError(`${path}.pattern`, "must be a string");
-    try {
-      new RegExp(schema.pattern, "u");
-    } catch {
-      schemaError(`${path}.pattern`, "must be a valid regular expression");
+  if (schema.pattern !== void 0) assertPattern(schema.pattern, path);
+}
+function assertPattern(pattern, path) {
+  if (typeof pattern !== "string") schemaError(`${path}.pattern`, "must be a string");
+  try {
+    new RegExp(pattern, "u");
+  } catch {
+    schemaError(`${path}.pattern`, "must be a valid regular expression");
+  }
+}
+function assertNumericConstraints(schema, path) {
+  for (const key of ["minLength", "maxLength", "minItems", "maxItems"]) {
+    const value = schema[key];
+    if (value !== void 0 && (!Number.isInteger(value) || Number(value) < 0)) {
+      schemaError(`${path}.${key}`, "must be a non-negative integer");
     }
   }
-  for (const key of ["minLength", "maxLength", "minItems", "maxItems"]) {
-    if (schema[key] !== void 0 && (!Number.isInteger(schema[key]) || Number(schema[key]) < 0)) schemaError(`${path}.${key}`, "must be a non-negative integer");
-  }
   for (const key of ["minimum", "maximum"]) {
-    if (schema[key] !== void 0 && (typeof schema[key] !== "number" || !Number.isFinite(schema[key]))) schemaError(`${path}.${key}`, "must be a finite number");
+    const value = schema[key];
+    if (value !== void 0 && (typeof value !== "number" || !Number.isFinite(value))) {
+      schemaError(`${path}.${key}`, "must be a finite number");
+    }
   }
+}
+function assertObjectConstraints(schema, path) {
   if (schema.required !== void 0) {
-    if (!Array.isArray(schema.required) || schema.required.some((key) => typeof key !== "string") || new Set(schema.required).size !== schema.required.length) {
+    const required = schema.required;
+    if (!Array.isArray(required) || required.some((key) => typeof key !== "string") || new Set(required).size !== required.length) {
       schemaError(`${path}.required`, "must be an array of unique strings");
     }
   }
-  if (schema.additionalProperties !== void 0 && typeof schema.additionalProperties !== "boolean") schemaError(`${path}.additionalProperties`, "must be boolean");
-  if (schema.properties !== void 0) {
-    if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) schemaError(`${path}.properties`, "must be an object");
-    for (const [key, child] of Object.entries(schema.properties)) assertCodeSchema(child, `${path}.properties.${key}`);
+  if (schema.additionalProperties !== void 0 && typeof schema.additionalProperties !== "boolean") {
+    schemaError(`${path}.additionalProperties`, "must be boolean");
   }
+  if (schema.properties === void 0) return;
+  if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) {
+    schemaError(`${path}.properties`, "must be an object");
+  }
+  for (const [key, child] of Object.entries(schema.properties)) {
+    assertCodeSchema(child, `${path}.properties.${key}`);
+  }
+}
+function assertCodeSchema(schema, path) {
+  assertSchemaObject(schema, path);
+  schemaTypes(schema, path);
+  assertValueConstraints(schema, path);
+  assertNumericConstraints(schema, path);
+  assertObjectConstraints(schema, path);
   if (schema.items !== void 0) assertCodeSchema(schema.items, `${path}.items`);
 }
 function outputKindForCode(schema) {
   assertCodeSchema(schema, "outputSchema");
-  const types = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((type2) => type2 !== "null");
+  const types = schemaTypes(schema, "outputSchema").filter((type2) => type2 !== "null");
   if (types.length !== 1) schemaError("outputSchema.type", "must contain exactly one non-null type");
   const type = types[0];
   if (type === "integer" || type === "number") return "number";
@@ -107,6 +140,8 @@ function outputKindForCode(schema) {
   if (type === "string") return "string";
   return schemaError("outputSchema.type", "null-only outputs cannot be stored in a flow variable");
 }
+
+// src/code.ts
 function defineCode(options) {
   const permissions = validateBundleDefinition(options, "Code");
   assertCodeSchema(options.inputSchema, "inputSchema");

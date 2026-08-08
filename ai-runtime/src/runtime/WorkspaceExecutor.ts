@@ -1,0 +1,1 @@
+export function boundedWorkspaceText(value: unknown, maximum = 64_000) { const text = typeof value === "string" ? value : JSON.stringify(value ?? ""); return text.length > maximum ? `${text.slice(0, maximum)}\n[TRUNCATED]` : text; }

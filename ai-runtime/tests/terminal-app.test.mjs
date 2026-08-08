@@ -4,7 +4,10 @@ import { mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import { confirmTerminalGateway, LocalRuntimeConfigStore, runTerminalApp, runTerminalLauncher } from "../dist/index.js";
+
+installActiveHandleDiagnostics("ai-runtime/terminal-app");
 
 function terminals() {
   const input = new PassThrough();

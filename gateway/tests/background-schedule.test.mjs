@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertTimeZone, cronMatches, nextCronOccurrence, parseCronExpression } from "../src/background-schedule.ts";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
+import { assertTimeZone, cronMatches, nextCronOccurrence, parseCronExpression } from "../../shared/background-schedule.ts";
+
+installActiveHandleDiagnostics("gateway/background-schedule");
 
 test("parses strict five-field Cron expressions and Sunday aliases", () => {
   const parsed = parseCronExpression("*/15 9-17 * * 1-5,7");
@@ -23,4 +26,3 @@ test("skips nonexistent local times across daylight-saving transitions", () => {
   const next = nextCronOccurrence("30 2 * * *", "America/New_York", new Date("2026-03-08T05:00:00.000Z"));
   assert.equal(next.toISOString(), "2026-03-09T06:30:00.000Z");
 });
-

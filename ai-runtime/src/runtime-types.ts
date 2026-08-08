@@ -9,13 +9,13 @@ import type {
   KnowledgeProgress,
   KnowledgeScope,
   SessionSummary,
-} from "./app-storage.ts";
-import type { HttpModelProviderConfig } from "./http-provider.ts";
-import type { ModelEvent, ModelProvider, ProviderConfig } from "./model-provider.ts";
-import type { PermissionAdapter, PluginLog } from "./plugin-sandbox.ts";
+} from "./storage-contracts.ts";
+import type { HttpModelProviderConfig } from "./provider-contracts.ts";
+import type { ModelEvent, ModelProvider, ProviderConfig } from "./runtime/contracts/ModelPort.ts";
+import type { PermissionAdapter, PluginLog } from "./runtime/contracts/PluginPort.ts";
 import type { RuntimeRenderer } from "./renderer.ts";
 
-export type { ProviderConfig } from "./model-provider.ts";
+export type { ProviderConfig } from "./runtime/contracts/ModelPort.ts";
 
 export type RuntimeBundleKind = "plugin" | "code" | "hook" | "flow-hook";
 export type RuntimeTrustRequest = {

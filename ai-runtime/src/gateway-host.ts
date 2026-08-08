@@ -2,7 +2,7 @@ import type { AppBackgroundConfig, CronTriggerConfig, HeartbeatTriggerConfig } f
 import { createSafeOutboundFetch, validateResolvedPublicUrl } from "../../../lib/network-security.ts";
 import { BACKGROUND_RUN, type BackgroundRunServices, type BackgroundRunnableApp, type BackgroundTriggerContext, type ContactReceipt, type ContactRequest } from "./background-context.ts";
 import { AiRuntimeError } from "./errors.ts";
-import { createRuntime } from "./index.ts";
+import { createRuntimeKernel as createRuntime } from "./runtime/RuntimeKernel.ts";
 import type { AiRunResult, AiStreamEvent, AiStreamMode, RunAiOptions, RuntimeOptions } from "./runtime-types.ts";
 
 export { AiRuntimeError, createSafeOutboundFetch, validateResolvedPublicUrl };

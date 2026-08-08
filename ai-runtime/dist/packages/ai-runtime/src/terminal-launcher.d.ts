@@ -2,7 +2,7 @@ import type { AiAppInfo, RuntimeTrustDecision, RuntimeTrustRequest } from "./run
 import type { RuntimePathRequest } from "./host-permissions.ts";
 import { LocalRuntimeConfigStore } from "./local-config.ts";
 import type { TerminalInput, TerminalOutput } from "./terminal-renderer.ts";
-import { type GatewayClientLike } from "./gateway-loader.ts";
+import type { GatewayClientLike } from "./gateway-loader.ts";
 type TerminalIo = {
     input?: TerminalInput;
     output?: TerminalOutput;

@@ -35,6 +35,10 @@ async function command(options: GatewayServiceOptions, file: string, args: strin
   catch (error) { throw new AiRuntimeError(code, `Unable to configure Runtime Gateway login service using ${file}`, { cause: error }); }
 }
 
+async function ignoreMissingService(action: Promise<unknown>): Promise<void> {
+  await action.then(() => undefined, () => undefined);
+}
+
 export async function installGatewayAutostart(options: GatewayServiceOptions = {}) {
   const { cliPath, nodePath, home } = paths(options);
   const platform = options.platform ?? process.platform;
@@ -42,7 +46,7 @@ export async function installGatewayAutostart(options: GatewayServiceOptions = {
     const path = join(home, "Library", "LaunchAgents", `${SERVICE_NAME}.plist`);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await writeFile(path, `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${SERVICE_NAME}</string><key>ProgramArguments</key><array><string>${xml(nodePath)}</string><string>${xml(cliPath)}</string><string>gateway</string><string>run</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ProcessType</key><string>Background</string></dict></plist>\n`, { mode: 0o600 });
-    try { await command(options, "launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}`, path], "GATEWAY_SERVICE_UNAVAILABLE"); } catch { /* Service may not be loaded yet. */ }
+    await ignoreMissingService(command(options, "launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}`, path], "GATEWAY_SERVICE_UNAVAILABLE"));
     await command(options, "launchctl", ["bootstrap", `gui/${process.getuid?.() ?? 0}`, path], "GATEWAY_SERVICE_UNAVAILABLE");
     return { platform: "darwin" as const, path };
   }
@@ -69,13 +73,13 @@ export async function uninstallGatewayAutostart(options: GatewayServiceOptions =
   const platform = options.platform ?? process.platform;
   if (platform === "darwin") {
     const path = join(home, "Library", "LaunchAgents", `${SERVICE_NAME}.plist`);
-    try { await command(options, "launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}`, path], "GATEWAY_SERVICE_UNAVAILABLE"); } catch { /* Already stopped. */ }
+    await ignoreMissingService(command(options, "launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}`, path], "GATEWAY_SERVICE_UNAVAILABLE"));
     await rm(path, { force: true });
     return;
   }
-  if (platform === "win32") { try { await command(options, "schtasks.exe", ["/Delete", "/F", "/TN", "AgComm Runtime Gateway"], "GATEWAY_SERVICE_UNAVAILABLE"); } catch { /* Already removed. */ } return; }
+  if (platform === "win32") { await ignoreMissingService(command(options, "schtasks.exe", ["/Delete", "/F", "/TN", "AgComm Runtime Gateway"], "GATEWAY_SERVICE_UNAVAILABLE")); return; }
   if (platform === "linux") {
-    try { await command(options, "systemctl", ["--user", "disable", "--now", "agcomm-runtime-gateway.service"], "GATEWAY_SERVICE_UNAVAILABLE"); } catch { /* Already stopped. */ }
+    await ignoreMissingService(command(options, "systemctl", ["--user", "disable", "--now", "agcomm-runtime-gateway.service"], "GATEWAY_SERVICE_UNAVAILABLE"));
     await rm(join(home, ".config", "systemd", "user", "agcomm-runtime-gateway.service"), { force: true });
     await command(options, "systemctl", ["--user", "daemon-reload"], "GATEWAY_SERVICE_UNAVAILABLE");
     return;

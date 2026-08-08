@@ -1,0 +1,30 @@
+import type { WorkspaceExtraTool } from "../../../../lib/workspace-tool-calling.ts";
+import type { FlowProject, Skill } from "../../../../domain/flow/types.ts";
+import type { PluginValue } from "../../../../runtime/plugins/sdk.ts";
+import type { PermissionAdapter, PluginLog } from "./contracts/PluginPort.ts";
+import type { RuntimeEvent, RuntimeTrustProvider } from "../runtime-types.ts";
+import { boundedWorkspaceText } from "./WorkspaceExecutor.ts";
+export declare function renderV3Value(value: unknown, variables: Readonly<Record<string, unknown>>): unknown;
+export declare const safeText: typeof boundedWorkspaceText;
+export declare class PluginManager {
+    private readonly project;
+    private readonly trustedKeys;
+    private readonly grants;
+    private readonly permissions;
+    private readonly logs;
+    private readonly allowUnsigned;
+    private readonly packageHash;
+    private readonly trustProvider;
+    private readonly emit;
+    private readonly sandboxes;
+    private readonly verified;
+    constructor(project: Pick<FlowProject, "plugins">, trustedKeys: Readonly<Record<string, string>>, grants: Readonly<Record<string, string[]>>, permissions: PermissionAdapter, logs: PluginLog[], allowUnsigned: boolean, packageHash: string, trustProvider: RuntimeTrustProvider | undefined, emit: (event: RuntimeEvent) => void);
+    private sandboxFor;
+    runCode(codeId: string, input: PluginValue, signal: AbortSignal): Promise<PluginValue>;
+    runHook(hookId: string, operation: string, input: PluginValue, signal: AbortSignal): Promise<PluginValue>;
+    hasHookOperation(hookId: string, operation: string): boolean;
+    runFlowHook(hookId: string, operation: string, input: PluginValue, signal: AbortSignal): Promise<PluginValue>;
+    hasFlowHookOperation(hookId: string, operation: string): boolean;
+    toolsFor(skill: Skill, signal: AbortSignal): Promise<WorkspaceExtraTool[]>;
+    dispose(): Promise<void>;
+}

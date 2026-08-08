@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import { createLineRenderer } from "../dist/index.js";
+
+installActiveHandleDiagnostics("ai-runtime/line-renderer");
 
 function streams() {
   const input = new PassThrough();

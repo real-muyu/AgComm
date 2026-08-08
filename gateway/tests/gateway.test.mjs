@@ -4,12 +4,15 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import { connectRuntimeGateway, createRuntimeGateway } from "../dist/index.js";
 import { createRuntime } from "../../ai-runtime/dist/index.js";
 import { createAiPackageV5 } from "../../../lib/ai-package-v5-format.ts";
 import { createAiPackageV6 } from "../../../lib/ai-package-v6-format.ts";
 import { createAiPackageV7 } from "../../../lib/ai-package-v7-format.ts";
 import { createAiPackageBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
+
+installActiveHandleDiagnostics("gateway/runtime");
 
 function backgroundProject({ webhook = false, body = "Review task", streamMode } = {}) {
   return {

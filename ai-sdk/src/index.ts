@@ -1,10 +1,9 @@
 export {
-  AiSdkError,
   defineApp,
-  defineSkill,
-  template,
-  variable,
-} from "./model.ts";
+} from "./app-definition.ts";
+
+export { defineSkill, template, variable } from "./model-values.ts";
+export { AiSdkError } from "./model-types.ts";
 
 export type {
   AppInteractionConfig,
@@ -42,7 +41,7 @@ export type {
   Visualization,
   WorkspaceNodeOptions,
   SdkFlowNode,
-} from "./model.ts";
+} from "./model-types.ts";
 
 export { defineCode } from "./code.ts";
 export type { CodeContext, CodeDefinition, CodeInput, CodeSchema, CodeValue, DefineCodeOptions } from "./code.ts";

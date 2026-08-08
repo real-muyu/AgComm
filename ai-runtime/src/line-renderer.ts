@@ -1,6 +1,6 @@
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { AiRuntimeError } from "./errors.ts";
-import type { ModelEvent } from "./model-provider.ts";
+import type { ModelEvent } from "./runtime/contracts/ModelPort.ts";
 import type { AiStreamEvent } from "./runtime-types.ts";
 import type {
   RuntimeInputField,
@@ -10,6 +10,7 @@ import type {
   RuntimeRendererStart,
 } from "./renderer.ts";
 import { sanitizeTerminalText } from "./terminal-renderer.ts";
+import { requestLineForm } from "./line-renderer-form.ts";
 
 const MAX_FIELD_CHARS = 65_536;
 const MAX_OUTPUT_CHARS = 1_048_576;
@@ -173,45 +174,7 @@ class LineRenderer implements RuntimeRenderer {
     }
 
     this.describe(request);
-    const values = inputValues(request);
-    for (const field of request.form.fields.filter((item) => item.component !== "button")) {
-      const hasCurrent = Object.hasOwn(request.variables, field.variable);
-      const current = hasCurrent ? valueText(values[field.variable]) : "";
-      if (field.component === "checkbox") {
-        const selected = values[field.variable] === true || String(values[field.variable]).toLowerCase() === "true" || values[field.variable] === 1;
-        for (;;) {
-          const answer = (await this.ask(`${text(field.label)} (${text(field.variable)}) [${selected ? "Y/n" : "y/N"}]: `, request.signal)).trim().toLowerCase();
-          if (!answer) { values[field.variable] = selected; break; }
-          if (["y", "yes", "1", "true"].includes(answer)) { values[field.variable] = true; break; }
-          if (["n", "no", "0", "false"].includes(answer)) { values[field.variable] = false; break; }
-          this.write("请输入 y/yes/1/true 或 n/no/0/false。\n");
-        }
-        continue;
-      }
-      const suffix = hasCurrent ? ` [${current}]` : field.placeholder ? ` [${text(field.placeholder)}]` : "";
-      const answer = await this.ask(`${text(field.label)} (${text(field.variable)}:${text(field.variableType)})${suffix}: `, request.signal);
-      values[field.variable] = answer === "" && hasCurrent ? values[field.variable] : answer;
-    }
-
-    const buttons = request.form.fields.filter((field) => field.component === "button");
-    if (buttons.length) {
-      const selected = currentButtonIndex(buttons, values);
-      for (;;) {
-        const suffix = selected >= 0 ? ` [${selected + 1}]` : "";
-        const answer = (await this.ask(`请选择按钮 1-${buttons.length}${suffix}: `, request.signal)).trim();
-        if (!answer && selected >= 0) break;
-        if (/^\d+$/.test(answer)) {
-          const index = Number(answer) - 1;
-          if (index >= 0 && index < buttons.length) {
-            const field = buttons[index];
-            values[field.variable] = field.buttonValue ?? "true";
-            break;
-          }
-        }
-        this.write(`请输入 1-${buttons.length} 的编号。\n`);
-      }
-    }
-    return values;
+    return requestLineForm(request, inputValues(request), { ask: (prompt, signal) => this.ask(prompt, signal), write: (value) => this.write(value), text, valueText });
   }
 
   onModelEvent(event: ModelEvent) {

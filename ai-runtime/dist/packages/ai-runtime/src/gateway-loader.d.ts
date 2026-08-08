@@ -69,13 +69,13 @@ type GatewayModule = {
         root?: string;
     }): Promise<GatewayClientLike>;
     installGatewayAutostart(): Promise<unknown>;
-    createRuntimeGateway(options?: {
-        runtime?: RuntimeOptions;
-    }): GatewayInstanceLike;
 };
 export declare function loadGatewayModule(): Promise<GatewayModule>;
 export declare function connectRuntimeGateway(options?: {
     root?: string;
 }): Promise<GatewayClientLike>;
 export declare function installGatewayAutostart(): Promise<unknown>;
+export declare function startRuntimeGateway(options?: {
+    runtime?: RuntimeOptions;
+}): Promise<GatewayInstanceLike>;
 export {};

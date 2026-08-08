@@ -1,5 +1,5 @@
 import { type AiProjectBeta1 } from "../../../lib/ai-package-beta-one-format.ts";
-import { type AppDefinition } from "./model.ts";
+import { type AppDefinition } from "./model-types.ts";
 export type CompiledApp = {
     readonly formatVersion: 8;
     readonly project: AiProjectBeta1;

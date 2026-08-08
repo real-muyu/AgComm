@@ -1,7 +1,6 @@
 import { AiRuntimeError } from "./errors.ts";
-import type { ModelEvent } from "./model-provider.ts";
+import type { ModelEvent, ModelReply } from "./runtime/contracts/ModelPort.ts";
 import type { FlowProject } from "../../../domain/flow/types.ts";
-import type { ModelReply } from "./model-provider.ts";
 import type { AiRunResult, AiRunStream, ModelInvocationContext } from "./runtime-types.ts";
 
 const MAX_BUFFER_BYTES = 1_048_576;

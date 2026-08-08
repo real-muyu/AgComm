@@ -5,7 +5,7 @@ import { XMLParser } from "fast-xml-parser";
 import { unzipSync, zipSync } from "fflate";
 import type { PluginValue } from "../../../runtime/plugins/sdk.ts";
 import { AiRuntimeError } from "./errors.ts";
-import type { PermissionAdapter } from "./plugin-sandbox.ts";
+import type { PermissionAdapter } from "./runtime/contracts/PluginPort.ts";
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const DOCUMENT_EXTENSIONS = new Set([".txt", ".md", ".json", ".docx"]);
@@ -88,57 +88,40 @@ async function selectedPath(path: string, mode: "read" | "write") {
   }
 }
 
-export function createNativePermissionAdapter(options: { selectPath?: RuntimePathSelector } = {}): PermissionAdapter {
-  const handles = new Map<string, string>();
-  const choose = async (input: PluginValue, request: RuntimePathRequest, signal: AbortSignal) => {
-    const values = object(input);
-    const supplied = typeof values.handle === "string" ? values.handle : typeof values.documentId === "string" ? values.documentId : undefined;
-    if (supplied) {
-      const path = handles.get(supplied);
-      if (!path) throw new AiRuntimeError("PERMISSION_HANDLE_INVALID", "The selected file handle has expired");
-      return { token: supplied, path };
-    }
-    if (!options.selectPath) throw new AiRuntimeError("PERMISSION_INTERACTION_REQUIRED", "This permission requires an interactive file selection");
-    const selected = await options.selectPath(request, signal);
-    if (!selected) throw new AiRuntimeError("PERMISSION_CANCELLED", "File selection was cancelled");
-    const path = await selectedPath(selected, request.mode);
-    if (request.kind === "document" && !DOCUMENT_EXTENSIONS.has(extname(path).toLowerCase())) throw new AiRuntimeError("DOCUMENT_TYPE_UNSUPPORTED", "Document must be TXT, Markdown, JSON, or DOCX");
-    const token = randomUUID();
-    handles.set(token, path);
-    return { token, path };
-  };
-
+function clipboardPermissions(): Pick<PermissionAdapter, "clipboard:read" | "clipboard:write"> {
   return {
     "clipboard:read": async () => {
-      try {
-        const { getText } = await import("@crosscopy/clipboard");
-        return { text: await getText() };
-      }
+      try { const { getText } = await import("@crosscopy/clipboard"); return { text: await getText() }; }
       catch (error) { throw new AiRuntimeError("NATIVE_CLIPBOARD_UNAVAILABLE", "System clipboard is unavailable", { cause: error }); }
     },
     "clipboard:write": async (input) => {
       const text = object(input).text;
       if (typeof text !== "string") throw new AiRuntimeError("PERMISSION_INPUT_INVALID", "clipboard:write requires text");
-      try {
-        const { setText } = await import("@crosscopy/clipboard");
-        await setText(text);
-        return { written: true };
-      }
+      try { const { setText } = await import("@crosscopy/clipboard"); await setText(text); return { written: true }; }
       catch (error) { throw new AiRuntimeError("NATIVE_CLIPBOARD_UNAVAILABLE", "System clipboard is unavailable", { cause: error }); }
     },
-    "screen:read": async () => {
-      try {
-        const { Monitor } = await import("node-screenshots");
-        const monitor = Monitor.all().find((item) => item.isPrimary()) ?? Monitor.all()[0];
-        if (!monitor) throw new Error("No monitor found");
-        const png = await (await monitor.captureImage()).toPng();
-        if (png.byteLength > MAX_FILE_BYTES) throw new AiRuntimeError("PERMISSION_OUTPUT_TOO_LARGE", "Screenshot exceeds 8 MiB");
-        return { mimeType: "image/png", base64: png.toString("base64") };
-      } catch (error) {
-        if (error instanceof AiRuntimeError) throw error;
-        throw new AiRuntimeError("NATIVE_SCREEN_UNAVAILABLE", "Screen capture is unavailable or not authorized by the operating system", { cause: error });
-      }
-    },
+  };
+}
+
+function screenPermission(): Pick<PermissionAdapter, "screen:read"> {
+  return { "screen:read": async () => {
+    try {
+      const { Monitor } = await import("node-screenshots");
+      const monitor = Monitor.all().find((item) => item.isPrimary()) ?? Monitor.all()[0];
+      if (!monitor) throw new Error("No monitor found");
+      const png = await (await monitor.captureImage()).toPng();
+      if (png.byteLength > MAX_FILE_BYTES) throw new AiRuntimeError("PERMISSION_OUTPUT_TOO_LARGE", "Screenshot exceeds 8 MiB");
+      return { mimeType: "image/png", base64: png.toString("base64") };
+    } catch (error) {
+      if (error instanceof AiRuntimeError) throw error;
+      throw new AiRuntimeError("NATIVE_SCREEN_UNAVAILABLE", "Screen capture is unavailable or not authorized by the operating system", { cause: error });
+    }
+  } };
+}
+
+type PathChoice = (input: PluginValue, request: RuntimePathRequest, signal: AbortSignal) => Promise<{ token: string; path: string }>;
+function filePermissions(choose: PathChoice): Pick<PermissionAdapter, "filesystem:read" | "filesystem:write" | "document:read" | "document:write"> {
+  return {
     "filesystem:read": async (input, signal) => {
       const selected = await choose(input, { mode: "read", kind: "file" }, signal);
       const metadata = await stat(selected.path);
@@ -170,10 +153,8 @@ export function createNativePermissionAdapter(options: { selectPath?: RuntimePat
       const operation = values.operation === "append" ? "append" : "replace";
       const selected = await choose(input, { mode: "write", kind: "document", extensions: [...DOCUMENT_EXTENSIONS] }, signal);
       let bytes: Uint8Array;
-      if (extname(selected.path).toLowerCase() === ".docx") {
-        const existing = await readFile(selected.path);
-        bytes = writeDocx(existing, values.text, operation);
-      } else {
+      if (extname(selected.path).toLowerCase() === ".docx") bytes = writeDocx(await readFile(selected.path), values.text, operation);
+      else {
         const current = operation === "append" ? await readFile(selected.path).catch((error) => (error as NodeJS.ErrnoException).code === "ENOENT" ? Buffer.alloc(0) : Promise.reject(error)) : Buffer.alloc(0);
         bytes = Buffer.concat([current, Buffer.from(values.text)]);
       }
@@ -182,4 +163,27 @@ export function createNativePermissionAdapter(options: { selectPath?: RuntimePat
       return { documentId: selected.token, written: true };
     },
   };
+}
+
+export function createNativePermissionAdapter(options: { selectPath?: RuntimePathSelector } = {}): PermissionAdapter {
+  const handles = new Map<string, string>();
+  const choose = async (input: PluginValue, request: RuntimePathRequest, signal: AbortSignal) => {
+    const values = object(input);
+    const supplied = typeof values.handle === "string" ? values.handle : typeof values.documentId === "string" ? values.documentId : undefined;
+    if (supplied) {
+      const path = handles.get(supplied);
+      if (!path) throw new AiRuntimeError("PERMISSION_HANDLE_INVALID", "The selected file handle has expired");
+      return { token: supplied, path };
+    }
+    if (!options.selectPath) throw new AiRuntimeError("PERMISSION_INTERACTION_REQUIRED", "This permission requires an interactive file selection");
+    const selected = await options.selectPath(request, signal);
+    if (!selected) throw new AiRuntimeError("PERMISSION_CANCELLED", "File selection was cancelled");
+    const path = await selectedPath(selected, request.mode);
+    if (request.kind === "document" && !DOCUMENT_EXTENSIONS.has(extname(path).toLowerCase())) throw new AiRuntimeError("DOCUMENT_TYPE_UNSUPPORTED", "Document must be TXT, Markdown, JSON, or DOCX");
+    const token = randomUUID();
+    handles.set(token, path);
+    return { token, path };
+  };
+
+  return { ...clipboardPermissions(), ...screenPermission(), ...filePermissions(choose) };
 }

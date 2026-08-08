@@ -1,4 +1,4 @@
-import type { PermissionAdapter } from "./plugin-sandbox.ts";
+import type { PermissionAdapter } from "./runtime/contracts/PluginPort.ts";
 export type RuntimePathRequest = {
     mode: "read" | "write";
     kind: "file" | "document";

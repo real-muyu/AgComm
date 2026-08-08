@@ -3,11 +3,14 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import {
   createNativePermissionAdapter,
   createPersistentTrustProvider,
   LocalRuntimeConfigStore,
 } from "../dist/index.js";
+
+installActiveHandleDiagnostics("ai-runtime/local-host");
 
 function memoryCredentials() {
   const values = new Map();

@@ -17,6 +17,7 @@ export declare class TerminalScreen {
     private entered;
     private previousRaw;
     private previouslyPaused;
+    private pendingKey?;
     constructor(input: TerminalInput, output: TerminalOutput, alternate?: boolean);
     enter(): void;
     leave(): void;

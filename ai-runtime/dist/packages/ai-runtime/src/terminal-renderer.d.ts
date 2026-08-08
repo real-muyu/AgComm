@@ -1,11 +1,7 @@
 import type { RuntimeRenderer } from "./renderer.ts";
-export type TerminalInput = NodeJS.ReadableStream & {
-    isTTY?: boolean;
-    isRaw?: boolean;
-    setRawMode?(mode: boolean): void;
-};
-export type TerminalOutput = NodeJS.WritableStream & {
-    isTTY?: boolean;
+import { type TerminalSessionInput, type TerminalSessionOutput } from "./tui/renderer/TerminalSession.ts";
+export type TerminalInput = TerminalSessionInput;
+export type TerminalOutput = TerminalSessionOutput & {
     columns?: number;
     rows?: number;
 };
@@ -16,5 +12,5 @@ export type TerminalRendererOptions = {
     formatError?: (error: unknown) => string;
     waitOnComplete?: boolean;
 };
-export declare function sanitizeTerminalText(value: unknown, multiline?: boolean): string;
+export { sanitizeTerminalText } from "./tui/renderer/TerminalText.ts";
 export declare function createTerminalRenderer(options?: TerminalRendererOptions): RuntimeRenderer;

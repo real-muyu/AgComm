@@ -5,7 +5,7 @@ import {
   createLineRenderer,
   createNativePermissionAdapter,
   createPersistentTrustProvider,
-  createRuntime,
+  createRuntimeKernel as createRuntime,
   createTerminalRenderer,
   LocalRuntimeConfigStore,
   promptTerminalTrust,
@@ -16,12 +16,13 @@ import {
   type ProviderConfig,
   type AiRunStream,
   type RuntimeRenderer,
-} from "./index.ts";
-import { loadGatewayModule, type GatewayInstanceLike } from "./gateway-loader.ts";
+} from "./runtime/RuntimeKernel.ts";
+import { startRuntimeGateway, type GatewayInstanceLike } from "./gateway-loader.ts";
 import { collectHttpProviderSecrets, type HttpModelProviderConfig } from "./http-provider.ts";
-import { cliAbortController as controller, cliInterrupted as interrupted } from "./cli-signal.ts";
+import { cliAbortController as controller, cliInterrupted as interrupted, disposeCliSignals } from "./cli-signal.ts";
 
 type CliArguments = { file?: string; open: boolean; input?: string; variables?: Record<string, unknown>; headless: boolean; batch: boolean; json: boolean; stream: boolean; allowUnsignedPlugins: boolean };
+type MutableCliArguments = CliArguments & { file: string };
 declare const __AI_RUNTIME_VERSION__: string;
 const RUNTIME_VERSION = __AI_RUNTIME_VERSION__;
 
@@ -44,46 +45,60 @@ function jsonObject(text: string, subject: string) {
   return value as Record<string, unknown>;
 }
 
+const BOOLEAN_OPTIONS = {
+  "--headless": "headless",
+  "--batch": "batch",
+  "--json": "json",
+  "--stream": "stream",
+  "--allow-unsigned-plugins": "allowUnsignedPlugins",
+} as const satisfies Record<string, keyof MutableCliArguments>;
+
+function initialCliArguments(): MutableCliArguments {
+  return { file: "", open: false, headless: false, batch: false, json: false, stream: false, allowUnsignedPlugins: false };
+}
+
+function parseOption(argv: string[], index: number, args: MutableCliArguments): number {
+  const option = argv[index];
+  const booleanKey = BOOLEAN_OPTIONS[option as keyof typeof BOOLEAN_OPTIONS];
+  if (booleanKey) {
+    args[booleanKey] = true;
+    return index;
+  }
+  if (option !== "--input" && option !== "--vars") {
+    throw new CliError("INVALID_ARGUMENTS", `Unknown option: ${option}`);
+  }
+  const value = argv[index + 1];
+  if (value === undefined) throw new CliError("INVALID_ARGUMENTS", `${option} requires a value`);
+  if (option === "--input") args.input = value;
+  else args.variables = jsonObject(value, "--vars");
+  return index + 1;
+}
+
+function parseTarget(argument: string, args: MutableCliArguments): void {
+  if (args.file || args.open) throw new CliError("INVALID_ARGUMENTS", "Choose either agcomm open or one .ai file");
+  if (argument === "open") args.open = true;
+  else args.file = argument;
+}
+
+function validateCliArguments(args: MutableCliArguments): void {
+  if (!args.file && !args.open) throw new CliError("INVALID_ARGUMENTS", usage());
+  if (args.file && !/\.ai$/i.test(args.file)) throw new CliError("INVALID_ARGUMENTS", "Input file must use the .ai extension");
+  if (args.headless && args.batch) throw new CliError("INVALID_ARGUMENTS", "--headless and --batch cannot be used together");
+  if (args.stream && args.json) throw new CliError("INVALID_ARGUMENTS", "--stream and --json cannot be used together");
+  if (args.stream && args.open) throw new CliError("INVALID_ARGUMENTS", "--stream requires an explicit .ai file path");
+}
+
 function parseArguments(argv: string[]): CliArguments {
   if (argv.includes("--help") || argv.includes("-h")) throw new CliError("HELP", usage());
-  let file = "";
-  let open = false;
-  let input: string | undefined;
-  let variables: Record<string, unknown> | undefined;
-  let headless = false;
-  let batch = false;
-  let json = false;
-  let stream = false;
-  let allowUnsignedPlugins = false;
+  const args = initialCliArguments();
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
-    if (argument === "--headless") { headless = true; continue; }
-    if (argument === "--batch") { batch = true; continue; }
-    if (argument === "--json") { json = true; continue; }
-    if (argument === "--stream") { stream = true; continue; }
-    if (argument === "--allow-unsigned-plugins") { allowUnsignedPlugins = true; continue; }
-    if (argument === "--input" || argument === "--vars") {
-      const value = argv[++index];
-      if (value === undefined) throw new CliError("INVALID_ARGUMENTS", `${argument} requires a value`);
-      if (argument === "--input") input = value;
-      else variables = jsonObject(value, "--vars");
-      continue;
-    }
-    if (argument.startsWith("-")) throw new CliError("INVALID_ARGUMENTS", `Unknown option: ${argument}`);
-    if (argument === "open") {
-      if (file || open) throw new CliError("INVALID_ARGUMENTS", "Choose either agcomm open or one .ai file");
-      open = true;
-      continue;
-    }
-    if (file || open) throw new CliError("INVALID_ARGUMENTS", "Choose either agcomm open or one .ai file");
-    file = argument;
+    if (argument.startsWith("-")) index = parseOption(argv, index, args);
+    else parseTarget(argument, args);
   }
-  if (!file && !open) throw new CliError("INVALID_ARGUMENTS", usage());
-  if (file && !/\.ai$/i.test(file)) throw new CliError("INVALID_ARGUMENTS", "Input file must use the .ai extension");
-  if (headless && batch) throw new CliError("INVALID_ARGUMENTS", "--headless and --batch cannot be used together");
-  if (stream && json) throw new CliError("INVALID_ARGUMENTS", "--stream and --json cannot be used together");
-  if (stream && open) throw new CliError("INVALID_ARGUMENTS", "--stream requires an explicit .ai file path");
-  return { ...(file ? { file } : {}), open, input, variables, headless, batch, json, stream, allowUnsignedPlugins };
+  validateCliArguments(args);
+  const { file, ...result } = args;
+  return file ? { file, ...result } : result;
 }
 
 function envObject(name: string) {
@@ -191,8 +206,7 @@ try {
     const profileProvider = httpProvider ? undefined : await localProvider(localStore);
     const provider = httpProvider ?? profileProvider!;
     const trustProvider = createPersistentTrustProvider(localStore, async () => ({ trusted: false }));
-    const { createRuntimeGateway } = await loadGatewayModule();
-    gateway = createRuntimeGateway({ runtime: {
+    gateway = await startRuntimeGateway({ runtime: {
       provider,
       trustedKeys: { ...(await localStore.trustedKeys()), ...trustedKeysFromEnvironment() },
       grants: grantsFromEnvironment(),
@@ -285,8 +299,8 @@ try {
   }
 } catch (error) {
   if (renderer && !rendererManaged) {
-    try { await renderer.fail?.(error); } catch { /* Preserve the original error. */ }
-    try { await renderer.dispose?.(); } catch { /* Best-effort terminal cleanup. */ }
+    await Promise.resolve(renderer.fail?.(error)).catch(() => undefined);
+    await Promise.resolve(renderer.dispose?.()).catch(() => undefined);
   }
   const failure = classify(error, interrupted);
   const value = error as { issues?: unknown; phase?: unknown };
@@ -305,4 +319,5 @@ try {
 } finally {
   await runtime?.dispose();
   await gateway?.dispose();
+  disposeCliSignals();
 }

@@ -1,6 +1,6 @@
 import type { AiRunResult, AiRunStream, AiStreamEvent, AiSessionHandle, KnowledgeDocument, KnowledgeImportOptions, KnowledgeScope, RunAiOptions, RuntimeOptions, SessionSummary, StreamRunOptions } from "@agcomm/ai-runtime";
 import type { GatewayInstallOptions, RuntimeGatewayClient } from "@agcomm/gateway";
-import type { AppDefinition } from "./model.ts";
+import type { AppDefinition } from "./model-types.ts";
 export type RunAppOptions = {
     runtime?: RuntimeOptions;
     run?: RunAiOptions;

@@ -1,54 +1,10 @@
 import { ChatOpenAI } from "@langchain/openai";
-import type { AIMessageChunk, BaseMessageLike } from "@langchain/core/messages";
-import { contentToText } from "../../../lib/workspace-tool-calling.ts";
+import type { BaseMessageLike } from "@langchain/core/messages";
 import { validateResolvedPublicUrl } from "../../../lib/network-security.ts";
-import type { WorkspaceToolCall, WorkspaceToolDefinition } from "../../../lib/workspace-tool-calling.ts";
 import { AiRuntimeError } from "./errors.ts";
-
-export type ModelEvent =
-  | { type: "token"; text: string }
-  | { type: "tool-call-delta"; index: number; id?: string; name?: string; arguments?: string };
-
-export type ModelReply = {
-  content: string;
-  toolCalls?: WorkspaceToolCall[];
-  raw?: unknown;
-};
-
-export type ModelProvider = {
-  model?: string;
-  supportsTools?: boolean;
-  call(input: {
-    messages: unknown[];
-    tools: WorkspaceToolDefinition[];
-    forceFinal: boolean;
-    signal: AbortSignal;
-    onEvent?: (event: ModelEvent) => void;
-  }): Promise<ModelReply>;
-};
-
-export type ProviderConfig = {
-  type?: "openai";
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  embeddingModel?: string;
-  provider?: ModelProvider;
-};
-
-function parseToolCalls(value: unknown): WorkspaceToolCall[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((raw, index) => {
-    const call = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-    let args = call.args;
-    if (typeof args === "string") {
-      try { args = JSON.parse(args); } catch { args = {}; }
-    }
-    return { id: String(call.id || `call_${index}`), name: String(call.name || ""), args: args ?? {} };
-  }).filter((call) => call.name);
-}
+import type { ModelProvider, ModelReply, ProviderConfig } from "./runtime/contracts/ModelPort.ts";
+import { modelReply, streamModelReply } from "./runtime/model/ModelResponse.ts";
+export type { ModelEvent, ModelProvider, ModelReply, ProviderConfig } from "./runtime/contracts/ModelPort.ts";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -114,27 +70,9 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     const target = input.tools.length && !input.forceFinal ? model.bindTools(input.tools as never[]) : model;
     if (input.onEvent) {
       const stream = await target.stream(input.messages as BaseMessageLike[], { signal: input.signal });
-      let response: AIMessageChunk | undefined;
-      for await (const chunk of stream) {
-        const text = contentToText(chunk.content);
-        if (text) input.onEvent({ type: "token", text });
-        for (const call of chunk.tool_call_chunks ?? []) input.onEvent({
-          type: "tool-call-delta",
-          index: call.index ?? 0,
-          ...(call.id ? { id: call.id } : {}),
-          ...(call.name ? { name: call.name } : {}),
-          ...(call.args ? { arguments: call.args } : {}),
-        });
-        response = response ? response.concat(chunk) : chunk;
-      }
-      if (!response) throw new AiRuntimeError("PROVIDER_RESPONSE_INVALID", "OpenAI-compatible provider returned an empty stream");
-      return { content: contentToText(response.content), toolCalls: parseToolCalls(response.tool_calls), raw: response };
+      return streamModelReply(stream, input.onEvent);
     }
     const response = await target.invoke(input.messages as BaseMessageLike[], { signal: input.signal });
-    return {
-      content: contentToText(response.content),
-      toolCalls: parseToolCalls((response as unknown as { tool_calls?: unknown }).tool_calls),
-      raw: response,
-    };
+    return modelReply(response as unknown as { content: unknown; tool_calls?: unknown });
   }
 }

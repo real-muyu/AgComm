@@ -5,6 +5,8 @@
     "moduleResolution": "NodeNext",
     "baseUrl": ".",
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "allowImportingTsExtensions": true,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -13,7 +15,7 @@
     "types": ["node"],
     "paths": {
       "@agcomm/ai-runtime": ["../ai-runtime/dist/index.d.ts"],
-      "@agcomm/gateway": ["../gateway/dist/index.d.ts"]
+      "@agcomm/gateway": ["../gateway/dist/gateway/src/index.d.ts"]
     }
   },
   "include": ["src/**/*.ts"]

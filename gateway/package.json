@@ -5,12 +5,13 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/gateway/src/index.d.ts",
       "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
+    "!dist/**/* [0-9]*",
     "LICENSE",
     "README.md"
   ],

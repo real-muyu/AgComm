@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import { createTerminalRenderer } from "../dist/index.js";
+
+installActiveHandleDiagnostics("ai-runtime/terminal-renderer");
 
 function terminals(columns = 100, rows = 30) {
   const input = new PassThrough();
@@ -144,4 +148,24 @@ test("terminal renderer keeps F10 submission compatible and scrolls focused fiel
   key(terminal.input, "f10");
   assert.deepEqual(await pending, variables);
   await renderer.dispose();
+});
+
+test("terminal renderer replaces timers and removes AbortSignal listeners on disposal", async () => {
+  const terminal = terminals();
+  const renderer = createTerminalRenderer({ input: terminal.input, output: terminal.output, color: false });
+  const controller = new AbortController();
+  const context = { projectName: "Lifecycle", model: "fake", signal: controller.signal, cancel: () => {} };
+  await renderer.start(context);
+  await renderer.start(context);
+  const pending = renderer.requestInput({
+    projectName: "Lifecycle", node: { id: "input", title: "Input" },
+    form: { layout: "single", fields: [{ id: "value", variable: "value", variableType: "string", label: "Value", component: "input", size: "small" }] },
+    variables: { value: "" }, signal: controller.signal,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(getEventListeners(controller.signal, "abort").length, 1);
+  controller.abort(new DOMException("test cleanup", "AbortError"));
+  await assert.rejects(pending, /test cleanup|Abort/i);
+  await renderer.dispose();
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });

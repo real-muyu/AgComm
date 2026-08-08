@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import { AiRuntimeError, createHttpModelProvider } from "../dist/index.js";
+
+installActiveHandleDiagnostics("ai-runtime/http-provider");
 
 const tool = { type: "function", function: { name: "lookup", description: "lookup", parameters: { type: "object" } } };
 

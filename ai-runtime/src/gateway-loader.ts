@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import type { RuntimeOptions } from "./runtime-types.ts";
 
 export type GatewayClientLike = {
@@ -47,13 +48,14 @@ export type GatewayInstanceLike = {
 type GatewayModule = {
   connectRuntimeGateway(options?: { root?: string }): Promise<GatewayClientLike>;
   installGatewayAutostart(): Promise<unknown>;
-  createRuntimeGateway(options?: { runtime?: RuntimeOptions }): GatewayInstanceLike;
 };
 
 let gatewayModule: Promise<GatewayModule> | undefined;
+const requireGateway = createRequire(import.meta.url);
 
 export function loadGatewayModule(): Promise<GatewayModule> {
-  gatewayModule ??= import("@agcomm/gateway") as unknown as Promise<GatewayModule>;
+  // Gateway depends on gateway-host. Resolve it at the CLI boundary to keep core imports one-way.
+  gatewayModule ??= Promise.resolve(requireGateway("@agcomm/gateway") as GatewayModule);
   return gatewayModule;
 }
 
@@ -63,4 +65,11 @@ export async function connectRuntimeGateway(options?: { root?: string }) {
 
 export async function installGatewayAutostart() {
   return (await loadGatewayModule()).installGatewayAutostart();
+}
+
+export async function startRuntimeGateway(options?: { runtime?: RuntimeOptions }): Promise<GatewayInstanceLike> {
+  const module = await loadGatewayModule() as GatewayModule & Record<string, unknown>;
+  const factory = module["createRuntimeGateway"];
+  if (typeof factory !== "function") throw new Error("Installed Gateway does not provide a runtime factory");
+  return (factory as (input?: { runtime?: RuntimeOptions }) => GatewayInstanceLike)(options);
 }

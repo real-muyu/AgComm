@@ -1,0 +1,62 @@
+import { type AiStreamMode } from "@agcomm/ai-runtime/gateway-host";
+import { type GatewayInstallOptions, type GatewayRunStream, type GatewayStartRunOptions, type RuntimeGatewayOptions } from "./GatewayState.ts";
+import type { GatewayExecutor } from "./GatewayExecutor.ts";
+export type { GatewayAppSummary, GatewayCredentialStore, GatewayDelivery, GatewayInboxItem, GatewayInstallOptions, GatewayRunRecord, GatewayRunStream, GatewayRunTicket, GatewayStartRunOptions, GatewayStreamFrame, NotificationAdapter, NotificationAdapterContext, RuntimeGatewayOptions } from "./GatewayState.ts";
+export { createGatewayCredentialStore } from "./GatewayNotifier.ts";
+export declare class RuntimeGateway {
+    private readonly options;
+    readonly root: string;
+    private readonly now;
+    private timer?;
+    private ipc?;
+    private ticking;
+    private readonly instanceLock;
+    private readonly scheduler;
+    private readonly state;
+    private readonly stream;
+    private readonly executor;
+    private readonly notifier;
+    constructor(options: RuntimeGatewayOptions | undefined, executor: GatewayExecutor);
+    private initialize;
+    status(): Promise<{
+        alive: true;
+        pid: number;
+        heartbeatAt: string | undefined;
+        healthy: boolean;
+    }>;
+    install(pathOrBytes: string | Uint8Array | ArrayBuffer, install?: GatewayInstallOptions): Promise<import("./GatewayState.ts").GatewayAppSummary>;
+    enable(id: string): Promise<void>;
+    disable(id: string): Promise<void>;
+    uninstall(id: string): Promise<void>;
+    listApps(): Promise<import("./GatewayState.ts").GatewayAppSummary[]>;
+    listRuns(id: string): Promise<{
+        streamMode: AiStreamMode;
+        lastSequence: number;
+        streamExpiresAt: string;
+        id: string;
+        appId: string;
+        packageHash: string;
+        triggerId: string;
+        triggerType: "heartbeat" | "cron";
+        scheduledAt: string;
+        startedAt: string;
+        finishedAt?: string;
+        status: "queued" | "running" | "completed" | "failed" | "cancelled";
+        outputSummary?: string;
+        error?: string;
+        elapsedMs?: number;
+    }[]>;
+    listInbox(id: string): Promise<import("./GatewayState.ts").GatewayInboxItem[]>;
+    markInboxRead(id: string, notificationIds: readonly string[]): Promise<void>;
+    retryDelivery(id: string, notificationId: string): Promise<void>;
+    startRunNow(id: string, triggerId: string, options?: GatewayStartRunOptions): Promise<import("./GatewayState.ts").GatewayRunTicket>;
+    watchRun(id: string, runId: string, options?: {
+        mode?: AiStreamMode;
+        afterSequence?: number;
+        signal?: AbortSignal;
+    }): Promise<GatewayRunStream>;
+    runNow(id: string, triggerId: string): Promise<void>;
+    private tick;
+    start(): Promise<void>;
+    dispose(): Promise<void>;
+}

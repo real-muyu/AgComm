@@ -1,12 +1,15 @@
 import { Buffer } from "node:buffer";
-import { validateResolvedPublicUrl } from "../../../lib/network-security.ts";
 import { AiRuntimeError } from "./errors.ts";
-import type { ModelEvent, ModelProvider, ModelReply } from "./model-provider.ts";
+import { createHttpRequestExecutor } from "./runtime/HttpRequestExecutor.ts";
+import { readSseFrames } from "./runtime/SseFrameReader.ts";
+import { ToolCallDeltaAccumulator } from "./runtime/ToolCallDeltaAccumulator.ts";
+import type { ModelEvent, ModelProvider, ModelReply } from "./runtime/contracts/ModelPort.ts";
+import type { HttpModelProviderConfig, HttpProviderAuth, JsonResponseMapping, RequestTransformContext, RequestTransformResult, SseResponseMapping, ToolCallMapping } from "./provider-contracts.ts";
+export type { HttpModelProviderConfig, HttpProviderAuth, JsonResponseMapping, RequestTransformContext, RequestTransformResult, SseResponseMapping, ToolCallMapping } from "./provider-contracts.ts";
 
 const MAX_TRANSFORM_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_SSE_EVENT_BYTES = 256 * 1024;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ALLOWED_METHODS = new Set(["POST", "PUT", "PATCH"]);
 const FORBIDDEN_HEADERS = new Set([
@@ -14,64 +17,6 @@ const FORBIDDEN_HEADERS = new Set([
   "transfer-encoding", "connection", "keep-alive", "te", "trailer", "upgrade",
 ]);
 const MISSING = Symbol("missing-json-pointer");
-
-export type HttpProviderAuth =
-  | { type: "none" }
-  | { type: "bearer"; tokenEnv: string }
-  | { type: "apiKey"; header: string; valueEnv: string }
-  | { type: "basic"; usernameEnv: string; passwordEnv: string };
-
-export type ToolCallMapping = {
-  idPointer?: string;
-  namePointer: string;
-  argumentsPointer: string;
-};
-
-export type JsonResponseMapping = {
-  mode: "json";
-  contentPointer: string;
-  toolCallsPointer?: string;
-  toolCall?: ToolCallMapping;
-};
-
-export type SseResponseMapping = {
-  mode: "sse";
-  doneData?: string;
-  contentDeltaPointer: string;
-  toolCallDeltasPointer?: string;
-  toolCall?: ToolCallMapping & { indexPointer: string };
-};
-
-export type RequestTransformContext = {
-  messages: unknown[];
-  tools: unknown[];
-  model: string;
-  temperature: number;
-  maxTokens: number;
-  forceFinal: boolean;
-};
-
-export type RequestTransformResult = {
-  body: unknown;
-  query?: Record<string, string | number | boolean | null | Array<string | number | boolean>>;
-  headers?: Record<string, string>;
-};
-
-export type HttpModelProviderConfig = {
-  type: "http";
-  url: string;
-  method?: "POST" | "PUT" | "PATCH";
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  timeoutMs?: number;
-  headers?: Record<string, string>;
-  auth?: HttpProviderAuth;
-  requestTransformer: string | ((context: RequestTransformContext) => RequestTransformResult | Promise<RequestTransformResult>);
-  response: JsonResponseMapping | SseResponseMapping;
-  environment?: Readonly<Record<string, string | undefined>>;
-  fetcher?: typeof globalThis.fetch;
-};
 
 function fail(code: string, message: string, cause?: unknown): never {
   throw new AiRuntimeError(code, message, cause === undefined ? undefined : { cause });
@@ -222,13 +167,6 @@ function normalizedMessages(messages: unknown[]) {
   });
 }
 
-function deepFreeze<T>(value: T): T {
-  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
-  Object.freeze(value);
-  for (const item of Object.values(value as Record<string, unknown>)) deepFreeze(item);
-  return value;
-}
-
 function assertJsonCompatible(value: unknown, path = "$", ancestors = new Set<object>()): void {
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
   if (typeof value === "number") {
@@ -338,7 +276,7 @@ async function readLimited(response: Response, signal: AbortSignal) {
       chunks.push(value);
     }
   } finally {
-    if (signal.aborted) try { await reader.cancel(signal.reason); } catch { /* Transport is already closed. */ }
+    if (signal.aborted) await reader.cancel(signal.reason).catch(() => undefined);
     reader.releaseLock();
   }
   const output = new Uint8Array(total);
@@ -379,104 +317,18 @@ async function parseJsonResponse(response: Response, mapping: JsonResponseMappin
   return normalizedReply(scalarText(contentValue), mapCompleteToolCalls(payload, mapping.toolCallsPointer, mapping.toolCall));
 }
 
-type ToolDelta = { id: string; name: string; arguments: string };
-
-function parseDeltaIndex(raw: unknown, pointer: string) {
-  const value = jsonPointer(raw, pointer);
-  const index = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(index) || index < 0 || index > 1_000) fail("HTTP_SSE_INVALID", "SSE tool call delta has an invalid index");
-  return index;
-}
-
 async function parseSseResponse(response: Response, mapping: SseResponseMapping, signal: AbortSignal, onEvent?: (event: ModelEvent) => void) {
-  if (!response.body) fail("HTTP_SSE_INVALID", "Provider SSE response has no body");
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) fail("HTTP_RESPONSE_TOO_LARGE", "Provider response exceeds 4 MiB");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const doneData = mapping.doneData ?? "[DONE]";
-  const deltas = new Map<number, ToolDelta>();
+  const deltas = new ToolCallDeltaAccumulator(mapping, MISSING, jsonPointer, scalarText, onEvent);
   let content = "";
-  let pending = "";
-  let dataLines: string[] = [];
-  let total = 0;
-  let stopped = false;
-
-  const dispatch = () => {
-    if (!dataLines.length || stopped) { dataLines = []; return; }
-    const data = dataLines.join("\n");
-    dataLines = [];
-    if (Buffer.byteLength(data) > MAX_SSE_EVENT_BYTES) fail("HTTP_SSE_INVALID", "Provider SSE event exceeds 256 KiB");
-    if (data === doneData) { stopped = true; return; }
+  for await (const data of readSseFrames(response, signal, { doneData: mapping.doneData ?? "[DONE]", maxResponseBytes: MAX_RESPONSE_BYTES, maxEventBytes: MAX_SSE_EVENT_BYTES })) {
     let payload: unknown;
     try { payload = JSON.parse(data); }
     catch (error) { fail("HTTP_SSE_INVALID", "Provider SSE data is not valid JSON", error); }
     const text = scalarText(jsonPointer(payload, mapping.contentDeltaPointer));
     if (text) { content += text; onEvent?.({ type: "token", text }); }
-    if (!mapping.toolCallDeltasPointer || !mapping.toolCall) return;
-    const rawCalls = jsonPointer(payload, mapping.toolCallDeltasPointer);
-    if (rawCalls === MISSING) return;
-    if (!Array.isArray(rawCalls)) fail("HTTP_SSE_INVALID", "Mapped SSE tool call deltas value must be an array");
-    for (const raw of rawCalls) {
-      const index = parseDeltaIndex(raw, mapping.toolCall.indexPointer);
-      const current = deltas.get(index) ?? { id: "", name: "", arguments: "" };
-      const id = mapping.toolCall.idPointer ? scalarText(jsonPointer(raw, mapping.toolCall.idPointer)) : "";
-      const name = scalarText(jsonPointer(raw, mapping.toolCall.namePointer));
-      const argsValue = jsonPointer(raw, mapping.toolCall.argumentsPointer);
-      const args = argsValue === MISSING || argsValue == null ? "" : typeof argsValue === "string" ? argsValue : JSON.stringify(argsValue);
-      current.id += id; current.name += name; current.arguments += args;
-      deltas.set(index, current);
-      onEvent?.({ type: "tool-call-delta", index, ...(id ? { id } : {}), ...(name ? { name } : {}), ...(args ? { arguments: args } : {}) });
-    }
-  };
-
-  const line = (value: string) => {
-    if (value === "") { dispatch(); return; }
-    if (value.startsWith(":")) return;
-    const colon = value.indexOf(":");
-    const field = colon < 0 ? value : value.slice(0, colon);
-    let fieldValue = colon < 0 ? "" : value.slice(colon + 1);
-    if (fieldValue.startsWith(" ")) fieldValue = fieldValue.slice(1);
-    if (field === "data") dataLines.push(fieldValue);
-  };
-
-  try {
-    while (!stopped) {
-      if (signal.aborted) throw signal.reason;
-      const { done, value } = await readChunk(reader, signal);
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_RESPONSE_BYTES) {
-        await reader.cancel("response too large");
-        fail("HTTP_RESPONSE_TOO_LARGE", "Provider response exceeds 4 MiB");
-      }
-      try { pending += decoder.decode(value, { stream: true }); }
-      catch (error) { fail("HTTP_SSE_INVALID", "Provider SSE response is not UTF-8", error); }
-      for (;;) {
-        const newline = pending.indexOf("\n");
-        if (newline < 0) break;
-        const value = pending.slice(0, newline).replace(/\r$/, "");
-        pending = pending.slice(newline + 1);
-        line(value);
-        if (stopped) break;
-      }
-    }
-    if (!stopped) {
-      try { pending += decoder.decode(); }
-      catch (error) { fail("HTTP_SSE_INVALID", "Provider SSE response is not UTF-8", error); }
-      if (pending) line(pending.replace(/\r$/, ""));
-      dispatch();
-    } else await reader.cancel("SSE complete");
-  } finally {
-    if (signal.aborted) try { await reader.cancel(signal.reason); } catch { /* Transport is already closed. */ }
-    reader.releaseLock();
+    deltas.append(payload);
   }
-
-  const toolCalls = [...deltas.entries()].sort(([left], [right]) => left - right).map(([index, delta]) => {
-    if (!delta.name) fail("HTTP_SSE_INVALID", `SSE tool call ${index} has no name`);
-    return { id: delta.id || `call_${index}`, name: delta.name, args: argumentsValue(delta.arguments) };
-  });
-  return normalizedReply(content, toolCalls);
+  return normalizedReply(content, deltas.complete(argumentsValue));
 }
 
 export function collectHttpProviderSecrets(config: HttpModelProviderConfig, environment = config.environment ?? process.env) {
@@ -513,63 +365,14 @@ export function createHttpModelProvider(config: HttpModelProviderConfig): ModelP
   return {
     model,
     supportsTools,
-    async call(input) {
-      if (input.signal.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError");
-      if (input.tools.length && !input.forceFinal && !supportsTools) fail("PROVIDER_TOOLS_UNSUPPORTED", "HTTP provider does not define tool-call response mapping");
-      const context = deepFreeze(structuredClone({
-        messages: normalizedMessages(input.messages),
-        tools: input.tools,
-        model,
-        temperature,
-        maxTokens,
-        forceFinal: input.forceFinal,
-      })) as RequestTransformContext;
-      let transformed: RequestTransformResult;
-      try { transformed = validateTransformResult(await transformer(context)); }
-      catch (error) {
-        if (error instanceof AiRuntimeError) throw error;
-        fail("HTTP_TRANSFORM_FAILED", "requestTransformer failed", error);
-      }
-      const url = new URL(endpoint);
-      applyQuery(url, transformed.query);
-      const controller = new AbortController();
-      const cancel = () => controller.abort(input.signal.reason ?? new DOMException("Aborted", "AbortError"));
-      if (input.signal.aborted) cancel(); else input.signal.addEventListener("abort", cancel, { once: true });
-      const timer = setTimeout(() => controller.abort(new DOMException("HTTP provider timed out", "TimeoutError")), timeoutMs);
-      try {
-        try { await validateResolvedPublicUrl(url, { signal: controller.signal }); }
-        catch (error) {
-          if (input.signal.aborted) throw input.signal.reason ?? error;
-          if (controller.signal.aborted) fail("HTTP_PROVIDER_TIMEOUT", "HTTP provider request timed out", error);
-          fail("HTTP_PROVIDER_URL_REJECTED", "HTTP provider URL failed public HTTPS validation", error);
-        }
-        const headers = mergeHeaders(config.headers, transformed.headers, resolvedAuth.headers, config.response.mode);
-        let body: string;
-        try { body = JSON.stringify(transformed.body); }
-        catch (error) { fail("HTTP_TRANSFORM_INVALID", "requestTransformer body must be JSON-compatible", error); }
-        if (body === undefined) fail("HTTP_TRANSFORM_INVALID", "requestTransformer body cannot be undefined");
-        let response: Response;
-        try { response = await fetcher(url, { method, headers, body, redirect: "manual", signal: controller.signal }); }
-        catch (error) {
-          if (input.signal.aborted) throw input.signal.reason ?? error;
-          if (controller.signal.aborted) fail("HTTP_PROVIDER_TIMEOUT", "HTTP provider request timed out", error);
-          fail("HTTP_PROVIDER_REQUEST_FAILED", "HTTP provider request failed", error);
-        }
-        if (REDIRECT_STATUSES.has(response.status)) fail("HTTP_PROVIDER_REDIRECT", "HTTP provider redirects are not allowed");
-        if (!response.ok) fail("HTTP_PROVIDER_HTTP_ERROR", `HTTP provider returned status ${response.status}`);
-        try {
-          return config.response.mode === "json"
-            ? await parseJsonResponse(response, config.response, controller.signal)
-            : await parseSseResponse(response, config.response, controller.signal, input.onEvent);
-        } catch (error) {
-          if (input.signal.aborted) throw input.signal.reason ?? error;
-          if (controller.signal.aborted) fail("HTTP_PROVIDER_TIMEOUT", "HTTP provider response timed out", error);
-          throw error;
-        }
-      } finally {
-        clearTimeout(timer);
-        input.signal.removeEventListener("abort", cancel);
-      }
-    },
+    call: createHttpRequestExecutor({
+      endpoint, method, timeoutMs, model, temperature, maxTokens, supportsTools, fetcher,
+      transform: transformer, normalizeMessages: normalizedMessages, validateTransform: validateTransformResult,
+      headers: (result) => mergeHeaders(config.headers, result.headers, resolvedAuth.headers, config.response.mode),
+      applyQuery,
+      parseResponse: (response, signal, onEvent) => config.response.mode === "json"
+        ? parseJsonResponse(response, config.response, signal)
+        : parseSseResponse(response, config.response, signal, onEvent),
+    }),
   };
 }

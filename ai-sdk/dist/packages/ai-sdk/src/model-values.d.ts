@@ -1,0 +1,24 @@
+import type { AiSdkIssue, DefineSkillOptions, NodeRef, SkillDefinition, Template, VariableKind, VariableRef } from "./model-types.ts";
+export declare const RESERVED_VARIABLES: Set<string>;
+export declare function fail(code: string, message: string, issue?: Omit<AiSdkIssue, "code" | "message">): never;
+export declare function assertId(id: string, subject: string): void;
+export declare function defaultFor(kind: VariableKind): unknown;
+export declare function variableRef<T>(kind: VariableKind, name: string, value: T): VariableRef<T>;
+export declare const variable: {
+    string: (name: string, defaultValue?: string) => VariableRef<string>;
+    markdown: (name: string, defaultValue?: string) => VariableRef<string>;
+    number: (name: string, defaultValue?: number) => VariableRef<number>;
+    boolean: (name: string, defaultValue?: boolean) => VariableRef<boolean>;
+    array<T extends unknown[]>(name: string, defaultValue?: T): VariableRef<T>;
+    object<T extends Record<string, unknown>>(name: string, defaultValue?: T): VariableRef<T>;
+};
+export declare function isValueRef(value: unknown): value is VariableRef<unknown> | NodeRef<unknown>;
+export declare function isNodeRef(value: unknown): value is NodeRef<unknown>;
+export declare function isBranchRef(value: unknown): value is import("./model-types.ts").ConditionBranchRef;
+export declare function isTemplate(value: unknown): value is Template;
+export declare function template(strings: TemplateStringsArray, ...values: unknown[]): Template;
+export declare function defineSkill(options: DefineSkillOptions): SkillDefinition;
+export declare function encodeDefault(ref: VariableRef<unknown>): string;
+export declare function serializeValue(value: unknown): unknown;
+export declare function collectReferenceNames(value: unknown, names?: Set<string>): Set<string>;
+export declare function inferredKind(value: unknown): VariableKind;

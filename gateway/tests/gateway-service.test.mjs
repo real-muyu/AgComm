@@ -3,7 +3,10 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { installActiveHandleDiagnostics } from "../../test-utils/active-handles.mjs";
 import { installGatewayAutostart } from "../dist/index.js";
+
+installActiveHandleDiagnostics("gateway/service");
 
 async function fixture(platform) {
   const homeDir = await mkdtemp(join(tmpdir(), `gateway-service-${platform}-`));
@@ -45,4 +48,3 @@ test("installs a Linux systemd user service", async () => {
 test("rejects unstable temporary Runtime paths", async () => {
   await assert.rejects(() => installGatewayAutostart({ platform: "linux", cliPath: "/tmp/npm-cache/agcomm.js", execute: async () => {} }), (error) => error.code === "GATEWAY_RUNTIME_PATH_UNSTABLE");
 });
-

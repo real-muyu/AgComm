@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { AiRuntimeError } from "./errors.ts";
+import { enforcePrivateMode } from "./storage/FilePermissions.ts";
 import type { RuntimeTrustDecision, RuntimeTrustProvider, RuntimeTrustRequest } from "./runtime-types.ts";
 
 const KEYRING_SERVICE = "io.agcomm.runtime.provider";
@@ -54,7 +55,7 @@ async function atomicJson(path: string, value: unknown) {
   try {
     await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     await rename(temporary, path);
-    try { await chmod(path, 0o600); } catch { /* Windows may ignore POSIX modes. */ }
+    await enforcePrivateMode(path, 0o600, "CONFIG_WRITE_FAILED");
   } catch (error) {
     await rm(temporary, { force: true });
     throw new AiRuntimeError("CONFIG_WRITE_FAILED", `Unable to write Runtime configuration: ${path}`, { cause: error });

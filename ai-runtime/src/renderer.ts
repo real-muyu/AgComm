@@ -1,4 +1,4 @@
-import type { ModelEvent } from "./model-provider.ts";
+import type { ModelEvent } from "./runtime/contracts/ModelPort.ts";
 import type { AiStreamEvent, RuntimeEvent } from "./runtime-types.ts";
 
 export type RuntimeInputComponent = "input" | "checkbox" | "button";

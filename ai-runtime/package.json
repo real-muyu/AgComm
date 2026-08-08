@@ -18,6 +18,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/* [0-9]*",
     "LICENSE",
     "README.md",
     "USAGE.md"
@@ -30,7 +31,9 @@
     "verify:gateway-service": "npm run build && npm --prefix ../gateway run build && node scripts/verify-gateway-service.mjs",
     "test:pty": "npm run build && npm --prefix ../gateway run build && node scripts/run-pty-test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false",
-    "test": "npm run typecheck && npm run build && npm --prefix ../gateway run build && node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:unit": "node --experimental-strip-types --test --test-concurrency=1 tests/http-provider.test.mjs tests/line-renderer.test.mjs tests/local-host.test.mjs tests/runtime.test.mjs tests/session-picker.test.mjs tests/terminal-app.test.mjs tests/terminal-renderer.test.mjs",
+    "test:cli": "node --test --test-concurrency=1 tests/cli.test.mjs",
+    "test": "npm run typecheck && npm run build && npm --prefix ../gateway run build && npm run test:unit && npm run test:cli",
     "prepack": "npm run build"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
-export { createGatewayCredentialStore, createRuntimeGateway, RuntimeGateway } from "./gateway.ts";
+export { createGatewayCredentialStore, RuntimeGateway } from "./gateway/RuntimeGateway.ts";
+export { createRuntimeGateway } from "./gateway/GatewayComposition.ts";
 export type {
   GatewayAppSummary,
   GatewayCredentialStore,
@@ -14,10 +15,9 @@ export type {
   NotificationAdapter,
   NotificationAdapterContext,
   RuntimeGatewayOptions,
-} from "./gateway.ts";
-export { connectRuntimeGateway } from "./gateway-ipc.ts";
-export type { RuntimeGatewayClient } from "./gateway-ipc.ts";
+} from "./gateway/RuntimeGateway.ts";
+export { connectRuntimeGateway } from "./ipc/GatewayIpcClient.ts";
+export type { RuntimeGatewayClient } from "./ipc/GatewayIpcClient.ts";
 export { installGatewayAutostart, uninstallGatewayAutostart } from "./gateway-service.ts";
 export type { GatewayServiceOptions } from "./gateway-service.ts";
 export type { BackgroundTriggerContext, ContactReceipt, ContactRequest } from "@agcomm/ai-runtime/gateway-host";
-

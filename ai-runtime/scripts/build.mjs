@@ -6,12 +6,12 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { build } from "esbuild";
+import { cleanDistConflicts } from "../../shared/clean-dist-conflicts.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageVersion = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")).version;
 const outdir = resolve(root, "dist");
 const staging = resolve(root, `.dist-${process.pid}-${randomUUID()}`);
-const previous = `${staging}-previous`;
 await mkdir(staging, { recursive: true });
 
 try {
@@ -41,14 +41,9 @@ try {
   await chmod(resolve(staging, "cli.js"), 0o755);
   await writeFile(resolve(staging, "index.d.ts"), 'export * from "./packages/ai-runtime/src/index.js";\n');
   await writeFile(resolve(staging, "gateway-host.d.ts"), 'export * from "./packages/ai-runtime/src/gateway-host.js";\n');
-  try { await rename(outdir, previous); } catch (error) { if (error.code !== "ENOENT") throw error; }
-  try { await rename(staging, outdir); }
-  catch (error) {
-    try { await rename(previous, outdir); } catch { /* No previous build to restore. */ }
-    throw error;
-  }
-  await rm(previous, { recursive: true, force: true });
+  await cleanDistConflicts(staging);
+  await rm(outdir, { recursive: true, force: true });
+  await rename(staging, outdir);
 } finally {
   await rm(staging, { recursive: true, force: true });
-  await rm(previous, { recursive: true, force: true });
 }

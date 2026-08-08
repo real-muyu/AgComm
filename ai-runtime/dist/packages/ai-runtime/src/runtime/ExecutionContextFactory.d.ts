@@ -1,0 +1,21 @@
+import type { WorkspaceToolTrace } from "../../../../lib/workspace-tool-calling.ts";
+import type { PluginLog } from "./contracts/PluginPort.ts";
+import type { RunAiOptions } from "../runtime-types.ts";
+import { OutputStreamCoordinator, StreamPublisher } from "./StreamPublisher.ts";
+import type { RuntimeProject } from "./PackageParser.ts";
+import type { ProjectExecutionContext } from "./ProjectExecutor.ts";
+export declare function createExecutionContext(project: RuntimeProject, runOptions: RunAiOptions, context: ProjectExecutionContext): {
+    startedAt: number;
+    controller: AbortController;
+    cancel: () => void;
+    renderer: import("./RuntimeKernel.ts").RuntimeRenderer | undefined;
+    publisher: StreamPublisher;
+    outputStream: OutputStreamCoordinator | undefined;
+    history: import("./RuntimeKernel.ts").ConversationMessage[];
+    knowledgeContext: string;
+    variables: Record<string, unknown>;
+    logs: PluginLog[];
+    toolCalls: WorkspaceToolTrace[];
+    streamMode: import("../runtime-types.ts").AiStreamMode;
+    emit: (event: any) => void;
+};
